@@ -25,10 +25,11 @@ endif()
 add_subdirectory(succinct)
 add_subdirectory(croaring)
 
-add_executable(prototype main.cc)
+add_executable(prototype main.cc aho_corasick.cc)
 target_link_libraries(prototype succinct fmt croaring)
 add_custom_target(
   format clang-format -style=file:${CMAKE_CURRENT_SOURCE_DIR}/.clang-format -i
          ${CMAKE_CURRENT_SOURCE_DIR}/main.cc
-         ${CMAKE_CURRENT_SOURCE_DIR}/aho_corasick.h
+         ${CMAKE_CURRENT_SOURCE_DIR}/aho_corasick.cc
+         ${CMAKE_CURRENT_SOURCE_DIR}/aho_corasick/*.h
          ${CMAKE_CURRENT_SOURCE_DIR}/join_strings.h)

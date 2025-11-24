@@ -12,7 +12,7 @@
 
 #define BMAVX2OPT
 
-#include "aho_corasick.h"
+#include "aho_corasick/aho_corasick.old.h"
 #include "bitmagic/bm.h"
 #include "csv.h"
 #include "fmt/format.h"
@@ -214,12 +214,17 @@ int main() {
   std::vector<FingerprintType> join_fps = {};
   for (auto &joinstr : to_join_substrings) { join_fps.emplace_back(CalculateFingerprint(joinstr)); }
 
+  // Variant 2 env
   InvertedIndex hashtable;
+  std::generate(hashtable.begin(), hashtable.end(), [] { return BitmapVector(0); });
+  // Variant 3 env
   auto trie_cfg = aho_corasick::trie::config();
   trie_cfg.set_case_insensitive(false);
   trie_cfg.set_only_whole_words(false);
   auto trie = aho_corasick::trie(trie_cfg);
-  std::generate(hashtable.begin(), hashtable.end(), [] { return BitmapVector(0); });
+  std::unordered_set<size_t> trie_result[to_join_substrings.size()];
+
+  // Experiment
   auto variant = EnvOr("VARIANT", 0);
   {
     PerfEventBlock perf(row_count);
@@ -251,7 +256,6 @@ int main() {
 
         // Process all un-indexed rows
         ProcessNonindexedRows(data, result, joinstr, hashtable, substring_fp);
-        for (auto &[fp, index]: hashtable)
 
         if (EnvOr("DEBUG", 0)) { fmt::println("Join on string '{}' -- Number of rows: {}", joinstr, result.size()); }
       } else {
@@ -261,26 +265,32 @@ int main() {
       }
     }
     if (variant == 3) {
-      std::unordered_set<size_t> result_x[to_join_substrings.size()];
+      std::unordered_set<size_t> trie_result[to_join_substrings.size()];
       for (auto row_index = 0; row_index < data.size(); row_index++) {
         auto &row             = data[row_index];
         auto per_row_matching = trie.parse_text(row.title);
-        for (auto &emit_pattern : per_row_matching) { result_x[emit_pattern.get_index()].insert(row_index); }
-      }
-      if (EnvOr("DEBUG", 0)) {
-        for (auto idx = 0; idx < to_join_substrings.size(); idx++) {
-          fmt::println("Join on string '{}' -- Number of rows: {}", std::string_view(to_join_substrings[idx]),
-                       result_x[idx].size());
-        }
+        for (auto &emit_pattern : per_row_matching) { trie_result[emit_pattern.get_index()].insert(row_index); }
       }
     }
   }
-  if (variant == 2) {
-    auto non_indexed = 0UL;
-    for (auto &row : data) { non_indexed += 1 - static_cast<uint64_t>(row.was_indexed); }
-    auto memory_usage = 0UL;
-    for (auto fp = 0; fp < 256; fp++) { memory_usage += GET_SIZE_IN_BYTES(hashtable[fp]); }
-    fmt::println("Number of non-indexed rows: {} -- Total memory usage: {} MB", non_indexed,
-                 memory_usage / (1024 * 1024));
+  switch (variant) {
+    case 2: {
+      auto non_indexed = 0UL;
+      for (auto &row : data) { non_indexed += 1 - static_cast<uint64_t>(row.was_indexed); }
+      auto memory_usage = 0UL;
+      for (auto fp = 0; fp < 256; fp++) { memory_usage += GET_SIZE_IN_BYTES(hashtable[fp]); }
+      fmt::println("Number of non-indexed rows: {} -- Total memory usage: {} MB", non_indexed,
+                   memory_usage / (1024 * 1024));
+    } break;
+    case 3: {
+      if (EnvOr("DEBUG", 0)) {
+        for (auto idx = 0; idx < to_join_substrings.size(); idx++) {
+          fmt::println("Join on string '{}' -- Number of rows: {}", std::string_view(to_join_substrings[idx]),
+                       trie_result[idx].size());
+        }
+      }
+      fmt::println("Total memory usage: {} B", trie.traverse_tree(true, true, true));
+    }
+    default: break;
   }
 }

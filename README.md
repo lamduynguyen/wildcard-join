@@ -1,0 +1,80 @@
+# String idea
+
+## Overall ideas
+
+- Lazily build the inverted hash index using n-grams of all rows
+  - Inverted index: Map from (sub)string to document ID (row ID in our case)
+  - All strings have an 1B fingerprint -- the fingerprint represents set of most frequent characters from data sampling process
+  - Upon scan/filter/join, only process with strings whose fingerprint matches the required pattern
+  - With join, we always have to probe the data size, which involves scanning the table
+- For a substring/pattern search, generate the set of possible rows using intersection of all row IDs from inverted index
+  - Example: Find substring `Doctor` => Four n-grams `Doc`, `oct`, `cto`, `tor`
+  - Let's say the inverted index is `SIGN_HASHTABLE`
+  - We have four sets of row IDs that contain four n-grams, respectively:
+    - `Set a1 = SIGN_HASHTABLE[hash(Doc)]`
+    - `Set a2 = SIGN_HASHTABLE[hash(oct)]`
+    - `Set a3 = SIGN_HASHTABLE[hash(cto)]`
+    - `Set a4 = SIGN_HASHTABLE[hash(tor)]`
+  - The row IDs we want to evaluate are: `a1 & a2 & a3 & a4`
+- With the row IDs from this intersection, we proceed with normal filter/join query
+
+### Target workloads
+
+#### First problem
+
+- Wildcard filtering, e.g., `WHERE col LIKE "%green%"`
+  - Bloom filter on all string columns
+  - Steal some ideas from here: www.rbanno.net/data/paper/202501_IEEE_CCNC.pdf
+- Join on full string
+  - Use a dictionary compression, e.g., OnPair, to shorten the string value used in join predicate
+  - Or use a per-column dictionary for compression/quick-search
+    - Upon join/filter, use the corresponding dictionary
+
+#### Second problem (To clarify)
+
+- Peter's USSR paper
+- Join on substring, something regex/full-text-search like
+  - Prefix, suffix, middle-of-string
+
+#### Example
+
+Mostly follow the discussion here: https://cedardb.com/docs/example_datasets/job/
+
+- `LIKE` filtering & join
+  - Join on constant string
+  - Join on another relation
+- (Sub)string matching
+
+**Example for `LIKE Join on another relation`**
+
+Two relations: R and S
+```
+R.name  |   S.name_pattern
+Duy     |   ikt
+Viktor  |
+Till    |
+Maxi    |
+```
+
+`Query`: `SELECT * FROM R, S WHERE R.name LIKE '% S.name_pattern %'`
+
+## Steps
+
+- Download `imdb` dataset as extract it into folder `imdb`
+
+```shell
+mkdir imdb && cd imdb
+curl -OL https://bonsai.cedardb.com/job/imdb.tgz
+tar -zxvf imdb.tgz
+```
+
+*CSV format errors*:
+- In `imdb/title.csv`, row `2522636,\Frag'ile\,,1,2010,,F624,,,,,c0b2e279bce6d3b1717e750a2591bb6d`.
+  Fix: remove two `\` characters
+- Remove all escaped-comma (i.e., `\"`)
+
+`ls ./imdb` should show multiple csv files and one sql file containing the SQL schema of all files
+
+- Load into python dataframe (check `main.py`)
+
+With the format specified in `main.py`, ~360 lines are skipped due to csv formatting error

@@ -2,6 +2,14 @@
 
 ## Overall ideas
 
+**Key idea**:
+TODO: Idea: partition JOIN_STRINGS by fingerprint for better load balancingrow.fp & substring_fp) == substring_fp
+Row.title can only contains a pattern only if (row.fp & substring_fp) == substring_fp
+This also applies to partitions' fingerprint as well
+=> We can easily parallelize Trie construction by partitioning according to fingerprint
+Which also means, we can use full 64-bits fingerprint with full utf8 support, and no need to index it before
+
+**Obsolete**:
 - Lazily build the inverted hash index using n-grams of all rows
   - Inverted index: Map from (sub)string to document ID (row ID in our case)
   - All strings have an 1B fingerprint -- the fingerprint represents set of most frequent characters from data sampling process

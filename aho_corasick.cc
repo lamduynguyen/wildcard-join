@@ -150,10 +150,6 @@ auto ArtTree::FindChild(ArtNode *n, uint8_t ch) -> ArtNode ** {
   return nullptr;
 }
 
-void ArtTree::TryGrow(ArtNode *node, ArtNode **node_ref) {
-  // TODO
-}
-
 void ArtTree::AddChild(ArtNode *node, ArtNode **node_ref, uint8_t ch, ArtNode *child) {
   switch (node->type) {
     case ArtNode::NODE4: {
@@ -313,7 +309,6 @@ auto ArtTree::RecursiveInsert(ArtNode *node, ArtNode **ref, uint8_t *keyword_dat
   if (*next_ref) {
     return RecursiveInsert(*next_ref, next_ref, keyword_data, keyword_size, depth);
   } else {
-    TryGrow(*next_ref, next_ref);
     auto new_leaf = NewArtNode(ArtNode::NodeType::NODE4);
     AddChild(*next_ref, next_ref, keyword_data[depth], new_leaf);
     return new_leaf;

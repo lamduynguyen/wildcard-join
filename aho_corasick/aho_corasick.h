@@ -22,6 +22,7 @@ namespace aho_corasick {
 constexpr auto MAX_PREFIX_LEN = 10UL;
 
 struct ArtNode {
+  // TODO: Implement optimistic lock coupling + garbage collection with epoch-based + obsolete flag
   using PatternIndexType = uint32_t;
 
   enum NodeType : uint8_t {
@@ -95,7 +96,6 @@ class ArtTree {
 
   // Various node utilities
   auto FindChild(ArtNode *node, uint8_t ch) -> ArtNode **;
-  void TryGrow(ArtNode *node, ArtNode **node_ref);
   void AddChild(ArtNode *node, ArtNode **node_ref, uint8_t ch, ArtNode *child);
   void AddChild4(ArtNode4 *node, ArtNode **node_ref, uint8_t ch, ArtNode *child);
   void AddChild16(ArtNode16 *node, ArtNode **node_ref, uint8_t ch, ArtNode *child);

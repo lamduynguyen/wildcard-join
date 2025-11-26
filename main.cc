@@ -13,13 +13,13 @@
 #define BMAVX2OPT
 
 #include "aho_corasick/aho_corasick.old.h"
-#include "bitmagic/bm.h"
 #include "csv.h"
 #include "fmt/format.h"
 #include "join_strings.h"
 #include "perf_event.h"
 #include "roaring/roaring.hh"
 #include "succinct/elias_fano.hpp"
+#include "third_party/bitmagic/bm.h"
 
 #ifdef USE_ROARING
 using BitmapVector = roaring::Roaring;

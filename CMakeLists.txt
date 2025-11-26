@@ -22,8 +22,8 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" AND CMAKE_BUILD_TYPE MATCHES
   add_compile_options(-fstandalone-debug)
 endif()
 
-add_subdirectory(succinct)
-add_subdirectory(croaring)
+add_subdirectory(third_party/succinct)
+add_subdirectory(third_party/croaring)
 
 file(GLOB_RECURSE SOURCE_FILES aho_corasick/**.cc aho_corasick/**/**.h)
 add_executable(prototype main.cc ${SOURCE_FILES})

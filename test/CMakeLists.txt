@@ -1,0 +1,10 @@
+if(ENABLE_TESTING)
+  set(TEST_REQUIRED_LIBS ahocorasick gtest gmock)
+  function(ADD_TEST TEST_NAME)
+    add_executable(${ARGV})
+    target_link_libraries(${TEST_NAME} PUBLIC ${TEST_REQUIRED_LIBS})
+    gtest_discover_tests(${TEST_NAME})
+  endfunction()
+
+  ADD_TEST(TestBasic test_basic.cc)
+endif()

@@ -87,6 +87,7 @@ auto ArtTree::NewArtNode(ArtNode::NodeType type) -> ArtNode * {
 }
 
 void ArtTree::DestroyArtNode(ArtNode *node) {
+  if (!node) { return; }
   switch (node->type) {
     case ArtNode::NODE4: {
       auto p = reinterpret_cast<ArtNode4 *>(node);

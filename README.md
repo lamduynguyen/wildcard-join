@@ -2,14 +2,28 @@
 
 ## Overall ideas
 
-**Key idea**:
-TODO: Idea: partition JOIN_STRINGS by fingerprint for better load balancingrow.fp & substring_fp) == substring_fp
-Row.title can only contains a pattern only if (row.fp & substring_fp) == substring_fp
-This also applies to partitions' fingerprint as well
-=> We can easily parallelize Trie construction by partitioning according to fingerprint
-Which also means, we can use full 64-bits fingerprint with full utf8 support, and no need to index it before
+### Aho-Corasick idea
 
-**Obsolete**:
+- Partition JOIN_STRINGS by fingerprint for better load balancing: `(row.fp & substring_fp) == substring_fp`
+- Row.title can only contains a pattern only if (row.fp & substring_fp) == substring_fp
+- This also applies to partitions' fingerprint as well
+  => We can easily parallelize Trie construction by partitioning according to fingerprint
+- Which also means, we can use full 64-bits fingerprint with full utf8 support, and no need to index it before
+
+**Four criteria to answer**:
+- Cache-aware trie -- currently evaluating ART index
+- Wildcard matching:
+  - In the trie indexing's output link, beside storing pattern row-id, also store the matching offset within the pattern
+  - Use the offset to answer wildcard `_` and `%`:
+    - E.g., for `WHERE col LIKE "green % red"`, offset of `green` should be < offset of `red`
+- If pattern >> data, is Aho-Corasick is still the best solution?
+  - Consider Wu-manber algorithm
+- Parallelize trie construction, especially when # patterns is large
+  - Is ART with optimistic lock coupling good enough?
+  - Partitioning based on fingerprint?
+
+### (Obsolete) Inverted index idea
+
 - Lazily build the inverted hash index using n-grams of all rows
   - Inverted index: Map from (sub)string to document ID (row ID in our case)
   - All strings have an 1B fingerprint -- the fingerprint represents set of most frequent characters from data sampling process
@@ -66,7 +80,17 @@ Maxi    |
 
 `Query`: `SELECT * FROM R, S WHERE R.name LIKE '% S.name_pattern %'`
 
-## Steps
+## Dependencies
+
+### Core
+
+`sudo apt-get install autoconf automake libtool curl make cmake g++ libgtest-dev libgmock-dev`
+
+### Compilation
+
+`mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. && make -j`
+
+### Dataset
 
 - Download `imdb` dataset as extract it into folder `imdb`
 
@@ -76,13 +100,9 @@ curl -OL https://bonsai.cedardb.com/job/imdb.tgz
 tar -zxvf imdb.tgz
 ```
 
+After this step, `ls ./imdb` should show multiple csv files and one sql file containing the SQL schema of all files
+
 *CSV format errors*:
 - In `imdb/title.csv`, row `2522636,\Frag'ile\,,1,2010,,F624,,,,,c0b2e279bce6d3b1717e750a2591bb6d`.
   Fix: remove two `\` characters
 - Remove all escaped-comma (i.e., `\"`)
-
-`ls ./imdb` should show multiple csv files and one sql file containing the SQL schema of all files
-
-- Load into python dataframe (check `main.py`)
-
-With the format specified in `main.py`, ~360 lines are skipped due to csv formatting error

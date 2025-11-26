@@ -26,8 +26,8 @@ struct EpochHandler {
 
 class EpochGuard {
  public:
-  EpochGuard(std::atomic<uint64_t> *epoch, const std::atomic<uint64_t> &global_epoch) : epoch_(epoch) {
-    epoch->store(global_epoch.load());
+  EpochGuard(std::atomic<uint64_t> *local_epoch, const std::atomic<uint64_t> &global_epoch) : epoch_(local_epoch) {
+    local_epoch->store(global_epoch.load());
   }
 
   ~EpochGuard() { epoch_->store(EpochHandler::MAX_VALUE); }

@@ -22,15 +22,49 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" AND CMAKE_BUILD_TYPE MATCHES
   add_compile_options(-fstandalone-debug)
 endif()
 
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+find_package(GTest REQUIRED)
+
 add_subdirectory(third_party/succinct)
 add_subdirectory(third_party/croaring)
 
+# ---------------------------------------------------------------------------
+# Aho-Corasick main library
+# ---------------------------------------------------------------------------
 file(GLOB_RECURSE SOURCE_FILES aho_corasick/**.cc aho_corasick/**/**.h)
-add_executable(prototype main.cc ${SOURCE_FILES})
-target_include_directories(prototype PRIVATE aho_corasick/include)
-target_link_libraries(prototype succinct fmt croaring)
+add_library(ahocorasick STATIC ${SOURCE_FILES})
+target_link_libraries(ahocorasick PUBLIC succinct fmt croaring)
+target_include_directories(ahocorasick PUBLIC aho_corasick/include)
+
+# ---------------------------------------------------------------------------
+# Main binary
+# ---------------------------------------------------------------------------
+add_executable(prototype main.cc)
+target_link_libraries(prototype ahocorasick)
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+option(ENABLE_TESTING "Build tests" OFF)
+if(ENABLE_TESTING)
+  enable_testing()
+  set(CMAKE_BUILD_TYPE "DEBUG")
+  add_subdirectory(test)
+endif()
+
+option(SANITIZER "Compile with sanitizer" OFF)
+if(SANITIZER)
+  message(STATUS "Enable sanitizer")
+  target_compile_options(prototype PUBLIC -fsanitize=address)
+  target_link_libraries(prototype PUBLIC asan)
+endif()
+
+file(GLOB_RECURSE TEST_FILES test/**.cc test/**/**.h)
 add_custom_target(
   format clang-format -style=file:${CMAKE_CURRENT_SOURCE_DIR}/.clang-format -i
          ${CMAKE_CURRENT_SOURCE_DIR}/main.cc
          ${CMAKE_CURRENT_SOURCE_DIR}/join_strings.h
-         ${SOURCE_FILES})
+         ${SOURCE_FILES}
+         ${TEST_FILES})

@@ -13,7 +13,7 @@
 
 namespace aho_corasick {
 
-ArtTree::ArtTree() : root_(nullptr) {}
+ArtTree::ArtTree(uint8_t no_threads) : root_(nullptr), epoch_(no_threads) {}
 
 ArtTree::~ArtTree() { DestroyArtNode(root_); }
 
@@ -42,6 +42,25 @@ void ArtTree::Insert(uint8_t *keyword_data, uint64_t keyword_size, ArtNode::Patt
 
     default: break;
   }
+}
+
+auto ArtTree::Contain(uint8_t *keyword_data, uint64_t keyword_size) -> bool {
+  auto n = root_;
+  int prefix_len, depth = 0;
+  while (n) {
+    if (n->prefix_len) {
+      prefix_len = n->CheckPrefix(keyword_data, keyword_size, depth);
+      if (prefix_len != std::min(MAX_PREFIX_LEN, n->prefix_len)) { return false; }
+      depth += n->prefix_len;
+    }
+    assert(depth < keyword_size);
+
+    // Recursively search
+    auto child = FindChild(n, keyword_data[depth]);
+    n          = (child) ? *child : nullptr;
+    depth++;
+  }
+  return depth == keyword_size;
 }
 
 // ------------------------------------------------------------------------------------------------

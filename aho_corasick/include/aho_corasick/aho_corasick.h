@@ -15,11 +15,12 @@
 #include <utility>
 #include <vector>
 
-#include "interval.h"
+#include "aho_corasick/interval.h"
+#include "utils/epoch_handler.h"
 
 namespace aho_corasick {
 
-constexpr auto MAX_PREFIX_LEN = 10UL;
+constexpr uint8_t MAX_PREFIX_LEN = 10U;
 
 struct ArtNode {
   // TODO: Implement optimistic lock coupling + garbage collection with epoch-based + obsolete flag
@@ -41,7 +42,7 @@ struct ArtNode {
   ~ArtNode() = default;
 
   inline auto CheckPrefix(const unsigned char *key, uint64_t key_len, uint64_t depth) {
-    auto max_cmp = std::min(std::min(static_cast<uint64_t>(prefix_len), MAX_PREFIX_LEN), key_len - depth);
+    auto max_cmp = std::min(static_cast<uint64_t>(std::min(prefix_len, MAX_PREFIX_LEN)), key_len - depth);
     auto idx     = 0UL;
     for (idx = 0; idx < max_cmp; idx++) {
       if (prefix[idx] != key[depth + idx]) { return idx; }
@@ -52,7 +53,7 @@ struct ArtNode {
   inline static void CopyHeader(ArtNode *dest, ArtNode *src) {
     dest->num_children = src->num_children;
     dest->prefix_len   = src->prefix_len;
-    memcpy(dest->prefix, src->prefix, std::min(MAX_PREFIX_LEN, static_cast<uint64_t>(src->prefix_len)));
+    memcpy(dest->prefix, src->prefix, std::min(MAX_PREFIX_LEN, src->prefix_len));
   }
 };
 
@@ -80,15 +81,17 @@ using ArtNode256 = ArtNodeType<0, 256>;
 
 class ArtTree {
  public:
-  ArtTree();
+  ArtTree(uint8_t no_threads);
   ~ArtTree();
 
   auto TraverseTree() -> uint64_t;
   void Insert(uint8_t *keyword_data, uint64_t keyword_size, ArtNode::PatternIndexType keyword_aux_index);
+  auto Contain(uint8_t *keyword_data, uint64_t keyword_size) -> bool;
   auto ParseText(std::string_view text) -> std::vector<Emit>;
 
  private:
   ArtNode *root_;
+  utils::EpochHandler epoch_; /* Epoch management */
 
   //--------------------------------------------
   auto NewArtNode(ArtNode::NodeType type) -> ArtNode *;

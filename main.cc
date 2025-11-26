@@ -18,8 +18,8 @@
 #include "join_strings.h"
 #include "perf_event.h"
 #include "roaring/roaring.hh"
-#include "third_party/succinct/elias_fano.hpp"
 #include "third_party/bitmagic/bm.h"
+#include "third_party/succinct/elias_fano.hpp"
 
 #ifdef USE_ROARING
 using BitmapVector = roaring::Roaring;

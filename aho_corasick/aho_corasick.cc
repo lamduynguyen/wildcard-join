@@ -18,7 +18,7 @@ auto checkKey(const TupleID tid, const Key &k) -> bool {
   return k == kt;
 }
 
-AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART_OLC::Tree>(loadKey, checkKey)) {}
+AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART_OLC::Tree>(loadKey, checkKey, true)) {}
 
 AhoCorasick::~AhoCorasick() = default;
 

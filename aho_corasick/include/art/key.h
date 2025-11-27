@@ -31,17 +31,9 @@ class Key {
 
   void set(const char bytes[], const std::size_t length);
 
-  void operator=(const char key[]);
-
   bool operator==(const Key &k) const {
     if (k.getKeyLen() != getKeyLen()) { return false; }
     return std::memcmp(&k[0], data, getKeyLen()) == 0;
-  }
-
-  bool operator==(const char key[]) const {
-    auto keyLen = strlen(key);
-    if (keyLen != getKeyLen()) { return false; }
-    return std::memcmp(&key[0], data, keyLen) == 0;
   }
 
   uint8_t &operator[](std::size_t i);
@@ -90,18 +82,6 @@ inline void Key::set(const char bytes[], const std::size_t length) {
     memcpy(data, bytes, length);
   }
   len = length;
-}
-
-inline void Key::operator=(const char key[]) {
-  if (len > stackLen) { delete[] data; }
-  len = strlen(key);
-  if (len <= stackLen) {
-    memcpy(stackKey, key, len);
-    data = stackKey;
-  } else {
-    data = new uint8_t[len];
-    memcpy(data, key, len);
-  }
 }
 
 inline void Key::setKeyLen(KeyLen newLen) {

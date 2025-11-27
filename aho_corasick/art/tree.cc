@@ -8,8 +8,8 @@
 
 namespace ART_OLC {
 
-Tree::Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey)
-    : root(new N256(nullptr, 0)), loadKey(loadKey), checkKey(checkKey) {}
+Tree::Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey, bool variableSizeKey)
+    : root(new N256(nullptr, 0)), loadKey(loadKey), checkKey(checkKey), variableSizeKey(variableSizeKey) {}
 
 Tree::~Tree() {
   N::deleteChildren(root);
@@ -46,24 +46,22 @@ restart:
       case CheckPrefixResult::NoMatch:
         node->readUnlockOrRestart(v, needRestart);
         if (needRestart) goto restart;
-        return 0;
-      case CheckPrefixResult::OptimisticMatch:
-        optimisticPrefixMatch = true;
-        // fallthrough
+        return INVALID_TID;
+      case CheckPrefixResult::OptimisticMatch: optimisticPrefixMatch = true; [[fallthrough]];
       case CheckPrefixResult::Match:
-        if (k.getKeyLen() <= level) { return 0; }
+        if (k.getKeyLen() <= level) { return INVALID_TID; }
         parentNode = node;
         node       = N::getChild(k[level], parentNode);
         parentNode->checkOrRestart(v, needRestart);
         if (needRestart) goto restart;
 
-        if (node == nullptr) { return 0; }
+        if (node == nullptr) { return INVALID_TID; }
         if (N::isLeaf(node)) {
           parentNode->readUnlockOrRestart(v, needRestart);
           if (needRestart) goto restart;
 
           TupleID tid = N::getLeaf(node);
-          if (level < k.getKeyLen() - 1 || optimisticPrefixMatch) {
+          if (variableSizeKey || level < k.getKeyLen() - 1 || optimisticPrefixMatch) {
             auto check = checkKey(tid, k);
             return (check) ? tid : INVALID_TID;
           }
@@ -170,13 +168,14 @@ restart:
       }
 
       level++;
+      assert(level < key.getKeyLen());  // prevent inserting when prefix of key exists already
       uint32_t prefixLength = 0;
       while (key[level + prefixLength] == k[level + prefixLength]) { prefixLength++; }
 
       auto n4 = new N4(&k[level], prefixLength);
       n4->insert(k[level + prefixLength], N::setLeaf(tid));
       n4->insert(key[level + prefixLength], nextNode);
-      N::change(node, k[level - 1], n4);
+      N::change(node, nodeKey, n4);
       node->writeUnlock();
       return;
     }

@@ -19,6 +19,7 @@ class Tree {
 
  private:
   N *const root;
+  bool variableSizeKey;
   LoadKeyFunction loadKey;
   CheckKeyFunction checkKey;
   Epoche epoche{256};
@@ -137,7 +138,7 @@ class Tree {
   }
 
  public:
-  Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey);
+  Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey, bool variableSizeKey);
 
   Tree(const Tree &) = delete;
 

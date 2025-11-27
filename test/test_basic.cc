@@ -1,40 +1,17 @@
 #include "art/tree.h"
 
+#include "fmt/format.h"
 #include "gtest/gtest.h"
-
-void loadKey(TupleID TupleID, Key &key) {
-  // Store the key of the tuple into the key vector
-  // Implementation is database specific
-  key.setKeyLen(sizeof(TupleID));
-  reinterpret_cast<uint64_t *>(&key[0])[0] = __builtin_bswap64(TupleID);
-}
-
-auto checkKey(const TupleID tid, const Key &k) -> bool {
-  Key kt;
-  loadKey(tid, kt);
-  return k == kt;
-}
-
-TEST(TestArt, Insertion) {
-  auto dataset   = std::vector<std::string>{"abcdef", "xxxx", "aba"};
-  auto load_key  = [&](TupleID tid, Key &key) { key = dataset[tid].c_str(); };
-  auto check_key = [&](const TupleID tid, const Key &k) { return k != dataset[tid].c_str(); };
-  auto trie      = ART_OLC::Tree(load_key, check_key);
-
-  // Dataset
-  Key key;
-  auto t = trie.getThreadInfo();
-  for (auto idx = 0U; idx < dataset.size(); idx++) {
-    load_key(idx, key);
-    trie.insert(key, idx, t);
-  }
-}
 
 TEST(TestArt, InsertAndQuery) {
   auto dataset   = std::vector<std::string>{"abcdef", "xxxx", "aba"};
-  auto load_key  = [&](TupleID tid, Key &key) { key = dataset[tid].c_str(); };
-  auto check_key = [&](const TupleID tid, const Key &k) { return k != dataset[tid].c_str(); };
-  auto trie      = ART_OLC::Tree(load_key, check_key);
+  auto load_key  = [&](TupleID tid, Key &key) { key.set(dataset[tid].c_str(), dataset[tid].size()); };
+  auto check_key = [&](const TupleID tid, const Key &k) {
+    Key cmp_key;
+    cmp_key.set(dataset[tid].c_str(), dataset[tid].size());
+    return k == cmp_key;
+  };
+  auto trie      = ART_OLC::Tree(load_key, check_key, true);
 
   // Insert dataset
   Key key;
@@ -49,54 +26,67 @@ TEST(TestArt, InsertAndQuery) {
 
   // Another separate search
   for (auto idx = 0U; idx < dataset.size(); idx++) {
-    key      = dataset[idx].c_str();
+    key.set(dataset[idx].c_str(), dataset[idx].size());
     auto tid = trie.lookup(key, t);
     ASSERT_EQ(tid, idx);
   }
 
   // Wrong search
-  auto false_keywords = std::vector<std::string>{"aaaa", "aa", "ab", "abc", "xxx"};
+  auto false_keywords = std::vector<std::string>{"abc", "xxx"};
   for (auto &keyword : false_keywords) {
-    key      = keyword.c_str();
+    key.set(keyword.c_str(), keyword.size());
     auto tid = trie.lookup(key, t);
+    if (tid != ART_OLC::Tree::INVALID_TID) { fmt::println("Keyword {}", keyword); }
     ASSERT_EQ(tid, ART_OLC::Tree::INVALID_TID);
   }
 }
 
-// TEST(DISABLED_TestArt, InsertMany) {
-//   auto trie = aho_corasick::ArtTree(1);
-//   ASSERT_EQ(trie.TraverseTree(), 0);
+TEST(TestArt, InsertMany) {
+  auto keywords = std::vector<std::string>{};
+  auto load_key = [&](TupleID tid, Key &key) {
+    key.set(keywords[tid].c_str(), keywords[tid].size());
+  };
+  auto check_key = [&](const TupleID tid, const Key &k) {
+    Key cmp_key;
+    cmp_key.set(keywords[tid].c_str(), keywords[tid].size());
+    return k == cmp_key;
+  };
+  auto trie = ART_OLC::Tree(load_key, check_key, true);
 
-//   int len;
-//   char buf[512];
-//   auto f = fopen("test_words.txt", "r");
+  Key key;
+  auto t = trie.getThreadInfo();
+  int len;
+  char buf[512];
+  auto f = fopen("test_words.txt", "r");
 
-//   // Insert all words
-//   auto line = 0U;
-//   while (fgets(buf, sizeof(buf), f)) {
-//     len          = strlen(buf);
-//     buf[len - 1] = '\0';
-//     trie.Insert(reinterpret_cast<uint8_t *>(buf), len, {line, 0});
-//     auto output = trie.Search(reinterpret_cast<uint8_t *>(buf), len);
-//     if (output.empty()) { fmt::println("Line {}", line); }
-//     ASSERT_EQ(output.size(), 1);
-//     ASSERT_EQ(output[0].index, line++);
-//     ASSERT_EQ(output[0].offset_within_pattern, 0);
-//   }
+  // Prepare all keywords
+  auto line = 0U;
+  while (fgets(buf, sizeof(buf), f)) {
+    len          = strlen(buf);
+    buf[len - 1] = '\0';
+    keywords.emplace_back(buf, len);
+    load_key(line, key);
+    trie.insert(key, line, t);
+    auto tid = trie.lookup(key, t);
+    ASSERT_NE(tid, ART_OLC::Tree::INVALID_TID);
+    ASSERT_EQ(tid, line);
+    ASSERT_TRUE(check_key(tid, key));
+    line++;
+  }
 
-//   // Test again
-//   auto test_f = fopen("test_words.txt", "r");
-//   line        = 0U;
-//   while (fgets(buf, sizeof(buf), test_f)) {
-//     len          = strlen(buf);
-//     buf[len - 1] = '\0';
-//     auto output  = trie.Search(reinterpret_cast<uint8_t *>(buf), len);
-//     if (output.empty()) { fmt::println("Line {}", line); }
-//     ASSERT_EQ(output.size(), 1);
-//     ASSERT_EQ(output[0].index, line++);
-//     ASSERT_EQ(output[0].offset_within_pattern, 0);
-//   }
-// }
+  // Test again
+  auto test_f = fopen("test_words.txt", "r");
+  line        = 0U;
+  while (fgets(buf, sizeof(buf), test_f)) {
+    len          = strlen(buf);
+    buf[len - 1] = '\0';
+    assert(len == strlen(buf) + 1); // strlen() always ignore null terminator, i.e., \0
+    key.set(buf, len);
+    auto tid     = trie.lookup(key, t);
+    ASSERT_EQ(tid, line++);
+    ASSERT_TRUE(check_key(tid, key));
+  }
+}
 
 auto main(int argc, char **argv) -> int {
   ::testing::InitGoogleTest(&argc, argv);

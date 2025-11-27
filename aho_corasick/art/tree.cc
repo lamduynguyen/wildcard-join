@@ -8,8 +8,7 @@
 
 namespace ART_OLC {
 
-Tree::Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey, bool variableSizeKey)
-    : root(new N256(nullptr, 0)), loadKey(loadKey), checkKey(checkKey), variableSizeKey(variableSizeKey) {}
+Tree::Tree() : root(new N256(nullptr, 0)) {}
 
 Tree::~Tree() {
   N::deleteChildren(root);
@@ -25,7 +24,8 @@ void yield(int count) {
     _mm_pause();
 }
 
-TupleID Tree::lookup(const Key &k, ThreadInfo &threadEpocheInfo) const {
+TupleID Tree::lookup(const Key &k, const LoadKeyFunction &loadKey, const CheckKeyFunction &checkKey,
+                     ThreadInfo &threadEpocheInfo) const {
   EpocheGuardReadonly epocheGuard(threadEpocheInfo);
   int restartCount = 0;
 restart:
@@ -61,7 +61,7 @@ restart:
           if (needRestart) goto restart;
 
           TupleID tid = N::getLeaf(node);
-          if (variableSizeKey || level < k.getKeyLen() - 1 || optimisticPrefixMatch) {
+          if (level < k.getKeyLen() - 1 || optimisticPrefixMatch) {
             auto check = checkKey(tid, k);
             return (check) ? tid : INVALID_TID;
           }
@@ -78,7 +78,7 @@ restart:
   }
 }
 
-void Tree::insert(const Key &k, TupleID tid, ThreadInfo &epocheInfo) {
+void Tree::insert(const Key &k, TupleID tid, const LoadKeyFunction &loadKey, ThreadInfo &epocheInfo) {
   EpocheGuard epocheGuard(epocheInfo);
   int restartCount = 0;
 restart:
@@ -103,7 +103,7 @@ restart:
 
     uint8_t nonMatchingKey;
     Prefix remainingPrefix;
-    auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix, this->loadKey,
+    auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix, loadKey,
                                       needRestart);  // increases level
     if (needRestart) goto restart;
     switch (res) {

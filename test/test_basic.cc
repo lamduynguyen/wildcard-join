@@ -4,22 +4,23 @@
 #include "gtest/gtest.h"
 
 TEST(TestArt, InsertAndQuery) {
-  auto dataset   = std::vector<std::string>{"abcdef", "xxxx", "aba"};
+  auto dataset = std::vector<std::string>{"abcdef", "xxxx", "aba", "ab"};
+  for (auto &key : dataset) { key += '\0'; }
   auto load_key  = [&](TupleID tid, Key &key) { key.set(dataset[tid].c_str(), dataset[tid].size()); };
   auto check_key = [&](const TupleID tid, const Key &k) {
     Key cmp_key;
     cmp_key.set(dataset[tid].c_str(), dataset[tid].size());
     return k == cmp_key;
   };
-  auto trie      = ART_OLC::Tree(load_key, check_key, true);
+  auto trie = ART_OLC::Tree();
 
   // Insert dataset
   Key key;
   auto t = trie.getThreadInfo();
   for (auto idx = 0U; idx < dataset.size(); idx++) {
     load_key(idx, key);
-    trie.insert(key, idx, t);
-    auto tid = trie.lookup(key, t);
+    trie.insert(key, idx, load_key, t);
+    auto tid = trie.lookup(key, load_key, check_key, t);
     ASSERT_NE(tid, ART_OLC::Tree::INVALID_TID);
     ASSERT_TRUE(check_key(tid, key));
   }
@@ -27,31 +28,30 @@ TEST(TestArt, InsertAndQuery) {
   // Another separate search
   for (auto idx = 0U; idx < dataset.size(); idx++) {
     key.set(dataset[idx].c_str(), dataset[idx].size());
-    auto tid = trie.lookup(key, t);
+    auto tid = trie.lookup(key, load_key, check_key, t);
     ASSERT_EQ(tid, idx);
   }
 
   // Wrong search
   auto false_keywords = std::vector<std::string>{"abc", "xxx"};
   for (auto &keyword : false_keywords) {
+    keyword += '\0';
     key.set(keyword.c_str(), keyword.size());
-    auto tid = trie.lookup(key, t);
+    auto tid = trie.lookup(key, load_key, check_key, t);
     if (tid != ART_OLC::Tree::INVALID_TID) { fmt::println("Keyword {}", keyword); }
     ASSERT_EQ(tid, ART_OLC::Tree::INVALID_TID);
   }
 }
 
 TEST(TestArt, InsertMany) {
-  auto keywords = std::vector<std::string>{};
-  auto load_key = [&](TupleID tid, Key &key) {
-    key.set(keywords[tid].c_str(), keywords[tid].size());
-  };
+  auto keywords  = std::vector<std::string>{};
+  auto load_key  = [&](TupleID tid, Key &key) { key.set(keywords[tid].c_str(), keywords[tid].size()); };
   auto check_key = [&](const TupleID tid, const Key &k) {
     Key cmp_key;
     cmp_key.set(keywords[tid].c_str(), keywords[tid].size());
     return k == cmp_key;
   };
-  auto trie = ART_OLC::Tree(load_key, check_key, true);
+  auto trie = ART_OLC::Tree();
 
   Key key;
   auto t = trie.getThreadInfo();
@@ -66,8 +66,8 @@ TEST(TestArt, InsertMany) {
     buf[len - 1] = '\0';
     keywords.emplace_back(buf, len);
     load_key(line, key);
-    trie.insert(key, line, t);
-    auto tid = trie.lookup(key, t);
+    trie.insert(key, line, load_key, t);
+    auto tid = trie.lookup(key, load_key, check_key, t);
     ASSERT_NE(tid, ART_OLC::Tree::INVALID_TID);
     ASSERT_EQ(tid, line);
     ASSERT_TRUE(check_key(tid, key));
@@ -80,9 +80,9 @@ TEST(TestArt, InsertMany) {
   while (fgets(buf, sizeof(buf), test_f)) {
     len          = strlen(buf);
     buf[len - 1] = '\0';
-    assert(len == strlen(buf) + 1); // strlen() always ignore null terminator, i.e., \0
+    assert(len == strlen(buf) + 1);  // strlen() always ignore null terminator, i.e., \0
     key.set(buf, len);
-    auto tid     = trie.lookup(key, t);
+    auto tid = trie.lookup(key, load_key, check_key, t);
     ASSERT_EQ(tid, line++);
     ASSERT_TRUE(check_key(tid, key));
   }

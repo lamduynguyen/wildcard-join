@@ -19,9 +19,6 @@ class Tree {
 
  private:
   N *const root;
-  bool variableSizeKey;
-  LoadKeyFunction loadKey;
-  CheckKeyFunction checkKey;
   Epoche epoche{256};
 
  public:
@@ -138,19 +135,20 @@ class Tree {
   }
 
  public:
-  Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey, bool variableSizeKey);
+  Tree();
 
   Tree(const Tree &) = delete;
 
-  Tree(Tree &&t) : root(t.root), loadKey(t.loadKey) {}
+  Tree(Tree &&t) : root(t.root) {}
 
   ~Tree();
 
   ThreadInfo getThreadInfo();
 
-  TupleID lookup(const Key &k, ThreadInfo &threadEpocheInfo) const;
+  TupleID lookup(const Key &k, const LoadKeyFunction &loadKey, const CheckKeyFunction &checkKey,
+                 ThreadInfo &threadEpocheInfo) const;
 
-  void insert(const Key &k, TupleID TupleID, ThreadInfo &epocheInfo);
+  void insert(const Key &k, TupleID TupleID, const LoadKeyFunction &loadKey, ThreadInfo &epocheInfo);
 
   void remove(const Key &k, TupleID TupleID, ThreadInfo &epocheInfo);
 };

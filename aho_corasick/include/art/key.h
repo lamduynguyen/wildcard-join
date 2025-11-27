@@ -38,6 +38,12 @@ class Key {
     return std::memcmp(&k[0], data, getKeyLen()) == 0;
   }
 
+  bool operator==(const char key[]) const {
+    auto keyLen = strlen(key);
+    if (keyLen != getKeyLen()) { return false; }
+    return std::memcmp(&key[0], data, keyLen) == 0;
+  }
+
   uint8_t &operator[](std::size_t i);
   const uint8_t &operator[](std::size_t i) const;
   KeyLen getKeyLen() const;

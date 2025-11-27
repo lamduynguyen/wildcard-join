@@ -17,8 +17,6 @@
 
 using TupleID = uint64_t;
 
-using namespace ART;
-
 namespace ART_OLC {
 /*
  * SynchronizedTree
@@ -122,11 +120,73 @@ class N {
 
   template <typename curN, typename biggerN>
   static void insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key,
-                         N *val, bool &needRestart, ThreadInfo &threadInfo);
+                         N *val, bool &needRestart, ThreadInfo &threadInfo) {
+    if (!n->isFull()) {
+      if (parentNode != nullptr) {
+        parentNode->readUnlockOrRestart(parentVersion, needRestart);
+        if (needRestart) return;
+      }
+      n->upgradeToWriteLockOrRestart(v, needRestart);
+      if (needRestart) return;
+      n->insert(key, val);
+      n->writeUnlock();
+      return;
+    }
+
+    parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
+    if (needRestart) return;
+
+    n->upgradeToWriteLockOrRestart(v, needRestart);
+    if (needRestart) {
+      parentNode->writeUnlock();
+      return;
+    }
+
+    auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+    n->copyTo(nBig);
+    nBig->insert(key, val);
+
+    N::change(parentNode, keyParent, nBig);
+
+    n->writeUnlockObsolete();
+    threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
+    parentNode->writeUnlock();
+  }
 
   template <typename curN, typename smallerN>
   static void removeAndShrink(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent,
-                              uint8_t key, bool &needRestart, ThreadInfo &threadInfo);
+                              uint8_t key, bool &needRestart, ThreadInfo &threadInfo) {
+    if (!n->isUnderfull() || parentNode == nullptr) {
+      if (parentNode != nullptr) {
+        parentNode->readUnlockOrRestart(parentVersion, needRestart);
+        if (needRestart) return;
+      }
+      n->upgradeToWriteLockOrRestart(v, needRestart);
+      if (needRestart) return;
+
+      n->remove(key);
+      n->writeUnlock();
+      return;
+    }
+    parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
+    if (needRestart) return;
+
+    n->upgradeToWriteLockOrRestart(v, needRestart);
+    if (needRestart) {
+      parentNode->writeUnlock();
+      return;
+    }
+
+    auto nSmall = new smallerN(n->getPrefix(), n->getPrefixLength());
+
+    n->copyTo(nSmall);
+    nSmall->remove(key);
+    N::change(parentNode, keyParent, nSmall);
+
+    n->writeUnlockObsolete();
+    threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
+    parentNode->writeUnlock();
+  }
 
   static uint64_t getChildren(const N *node, uint8_t start, uint8_t end, std::tuple<uint8_t, N *> children[],
                               uint32_t &childrenCount);
@@ -143,7 +203,9 @@ class N4 : public N {
   void insert(uint8_t key, N *n);
 
   template <class NODE>
-  void copyTo(NODE *n) const;
+  void copyTo(NODE *n) const {
+    for (uint32_t i = 0; i < count; ++i) { n->insert(keys[i], children[i]); }
+  }
 
   bool change(uint8_t key, N *val);
 
@@ -208,7 +270,9 @@ class N16 : public N {
   void insert(uint8_t key, N *n);
 
   template <class NODE>
-  void copyTo(NODE *n) const;
+  void copyTo(NODE *n) const {
+    for (unsigned i = 0; i < count; i++) { n->insert(flipSign(keys[i]), children[i]); }
+  }
 
   bool change(uint8_t key, N *val);
 
@@ -242,7 +306,11 @@ class N48 : public N {
   void insert(uint8_t key, N *n);
 
   template <class NODE>
-  void copyTo(NODE *n) const;
+  void copyTo(NODE *n) const {
+    for (unsigned i = 0; i < 256; i++) {
+      if (childIndex[i] != emptyMarker) { n->insert(i, children[childIndex[i]]); }
+    }
+  }
 
   bool change(uint8_t key, N *val);
 
@@ -272,7 +340,11 @@ class N256 : public N {
   void insert(uint8_t key, N *val);
 
   template <class NODE>
-  void copyTo(NODE *n) const;
+  void copyTo(NODE *n) const {
+    for (int i = 0; i < 256; ++i) {
+      if (children[i] != nullptr) { n->insert(i, children[i]); }
+    }
+  }
 
   bool change(uint8_t key, N *n);
 

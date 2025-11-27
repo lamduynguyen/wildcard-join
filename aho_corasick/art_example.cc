@@ -13,6 +13,12 @@ void loadKey(TupleID TupleID, Key &key) {
   reinterpret_cast<uint64_t *>(&key[0])[0] = __builtin_bswap64(TupleID);
 }
 
+auto checkKey(const TupleID tid, const Key &k) -> bool {
+  Key kt;
+  loadKey(tid, kt);
+  return k == kt;
+}
+
 void multithreaded(char **argv) {
   std::cout << "multi threaded:" << std::endl;
 
@@ -23,15 +29,18 @@ void multithreaded(char **argv) {
   for (uint64_t i = 0; i < n; i++)
     // dense, sorted
     keys[i] = i + 1;
-  if (atoi(argv[2]) == 1)
+  if (atoi(argv[2]) == 1) {
     // dense, random
-    std::random_shuffle(keys, keys + n);
+    std::random_device rd;  // non-deterministic random source
+    std::mt19937 g(rd());   // Mersenne Twister RNG
+    std::shuffle(keys, keys + n, g);
+  }
   if (atoi(argv[2]) == 2)
     // "pseudo-sparse" (the most-significant leaf bit gets lost)
     for (uint64_t i = 0; i < n; i++) keys[i] = (static_cast<uint64_t>(rand()) << 32) | static_cast<uint64_t>(rand());
 
   printf("operation,n,ops/s\n");
-  ART_OLC::Tree tree(loadKey);
+  ART_OLC::Tree tree(loadKey, checkKey);
   // ART_ROWEX::Tree tree(loadKey);
 
   // Build tree

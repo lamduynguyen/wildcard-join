@@ -76,41 +76,6 @@ bool N::change(N *node, uint8_t key, N *val) {
   __builtin_unreachable();
 }
 
-template <typename curN, typename biggerN>
-void N::insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val,
-                   bool &needRestart, ThreadInfo &threadInfo) {
-  if (!n->isFull()) {
-    if (parentNode != nullptr) {
-      parentNode->readUnlockOrRestart(parentVersion, needRestart);
-      if (needRestart) return;
-    }
-    n->upgradeToWriteLockOrRestart(v, needRestart);
-    if (needRestart) return;
-    n->insert(key, val);
-    n->writeUnlock();
-    return;
-  }
-
-  parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
-  if (needRestart) return;
-
-  n->upgradeToWriteLockOrRestart(v, needRestart);
-  if (needRestart) {
-    parentNode->writeUnlock();
-    return;
-  }
-
-  auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
-  n->copyTo(nBig);
-  nBig->insert(key, val);
-
-  N::change(parentNode, keyParent, nBig);
-
-  n->writeUnlockObsolete();
-  threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
-  parentNode->writeUnlock();
-}
-
 void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key,
                         N *val, bool &needRestart, ThreadInfo &threadInfo) {
   switch (node->getType()) {
@@ -137,7 +102,7 @@ void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersi
   }
 }
 
-inline N *N::getChild(const uint8_t k, const N *node) {
+N *N::getChild(const uint8_t k, const N *node) {
   switch (node->getType()) {
     case NTypes::N4: {
       auto n = static_cast<const N4 *>(node);
@@ -186,41 +151,6 @@ void N::deleteChildren(N *node) {
   }
   assert(false);
   __builtin_unreachable();
-}
-
-template <typename curN, typename smallerN>
-void N::removeAndShrink(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key,
-                        bool &needRestart, ThreadInfo &threadInfo) {
-  if (!n->isUnderfull() || parentNode == nullptr) {
-    if (parentNode != nullptr) {
-      parentNode->readUnlockOrRestart(parentVersion, needRestart);
-      if (needRestart) return;
-    }
-    n->upgradeToWriteLockOrRestart(v, needRestart);
-    if (needRestart) return;
-
-    n->remove(key);
-    n->writeUnlock();
-    return;
-  }
-  parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
-  if (needRestart) return;
-
-  n->upgradeToWriteLockOrRestart(v, needRestart);
-  if (needRestart) {
-    parentNode->writeUnlock();
-    return;
-  }
-
-  auto nSmall = new smallerN(n->getPrefix(), n->getPrefixLength());
-
-  n->copyTo(nSmall);
-  nSmall->remove(key);
-  N::change(parentNode, keyParent, nSmall);
-
-  n->writeUnlockObsolete();
-  threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
-  parentNode->writeUnlock();
 }
 
 void N::removeAndUnlock(N *node, uint64_t v, uint8_t key, N *parentNode, uint64_t parentVersion, uint8_t keyParent,

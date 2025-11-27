@@ -12,7 +12,13 @@ void loadKey(TupleID TupleID, Key &key) {
   reinterpret_cast<uint64_t *>(&key[0])[0] = __builtin_bswap64(TupleID);
 }
 
-AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART_OLC::Tree>(loadKey)) {}
+auto checkKey(const TupleID tid, const Key &k) -> bool {
+  Key kt;
+  loadKey(tid, kt);
+  return k == kt;
+}
+
+AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART_OLC::Tree>(loadKey, checkKey)) {}
 
 AhoCorasick::~AhoCorasick() = default;
 

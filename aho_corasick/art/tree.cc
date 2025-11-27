@@ -8,7 +8,8 @@
 
 namespace ART_OLC {
 
-Tree::Tree(LoadKeyFunction loadKey) : root(new N256(nullptr, 0)), loadKey(loadKey) {}
+Tree::Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey)
+    : root(new N256(nullptr, 0)), loadKey(loadKey), checkKey(checkKey) {}
 
 Tree::~Tree() {
   N::deleteChildren(root);
@@ -61,9 +62,12 @@ restart:
           parentNode->readUnlockOrRestart(v, needRestart);
           if (needRestart) goto restart;
 
-          TupleID TupleID = N::getLeaf(node);
-          if (level < k.getKeyLen() - 1 || optimisticPrefixMatch) { return checkKey(TupleID, k); }
-          return TupleID;
+          TupleID tid = N::getLeaf(node);
+          if (level < k.getKeyLen() - 1 || optimisticPrefixMatch) {
+            auto check = checkKey(tid, k);
+            return (check) ? tid : INVALID_TID;
+          }
+          return tid;
         }
         level++;
     }
@@ -76,242 +80,7 @@ restart:
   }
 }
 
-bool Tree::lookupRange(const Key &start, const Key &end, Key &continueKey, TupleID result[], std::size_t resultSize,
-                       std::size_t &resultsFound, ThreadInfo &threadEpocheInfo) const {
-  for (uint32_t i = 0; i < std::min(start.getKeyLen(), end.getKeyLen()); ++i) {
-    if (start[i] > end[i]) {
-      resultsFound = 0;
-      return false;
-    } else if (start[i] < end[i]) {
-      break;
-    }
-  }
-  EpocheGuard epocheGuard(threadEpocheInfo);
-  TupleID toContinue                      = 0;
-  std::function<void(const N *)> copy = [&result, &resultSize, &resultsFound, &toContinue, &copy](const N *node) {
-    if (N::isLeaf(node)) {
-      if (resultsFound == resultSize) {
-        toContinue = N::getLeaf(node);
-        return;
-      }
-      result[resultsFound] = N::getLeaf(node);
-      resultsFound++;
-    } else {
-      std::tuple<uint8_t, N *> children[256];
-      uint32_t childrenCount = 0;
-      N::getChildren(node, 0u, 255u, children, childrenCount);
-      for (uint32_t i = 0; i < childrenCount; ++i) {
-        const N *n = std::get<1>(children[i]);
-        copy(n);
-        if (toContinue != 0) { break; }
-      }
-    }
-  };
-  std::function<void(N *, uint8_t, uint32_t, const N *, uint64_t)> findStart =
-    [&copy, &start, &findStart, &toContinue, this](N *node, uint8_t nodeK, uint32_t level, const N *parentNode,
-                                                   uint64_t vp) {
-      if (N::isLeaf(node)) {
-        copy(node);
-        return;
-      }
-      uint64_t v;
-      PCCompareResults prefixResult;
-
-      {
-      readAgain:
-        bool needRestart = false;
-        v                = node->readLockOrRestart(needRestart);
-        if (needRestart) goto readAgain;
-
-        prefixResult = checkPrefixCompare(node, start, 0, level, loadKey, needRestart);
-        if (needRestart) goto readAgain;
-
-        parentNode->readUnlockOrRestart(vp, needRestart);
-        if (needRestart) {
-        readParentAgain:
-          needRestart = false;
-          vp          = parentNode->readLockOrRestart(needRestart);
-          if (needRestart) goto readParentAgain;
-
-          node = N::getChild(nodeK, parentNode);
-
-          parentNode->readUnlockOrRestart(vp, needRestart);
-          if (needRestart) goto readParentAgain;
-
-          if (node == nullptr) { return; }
-          if (N::isLeaf(node)) {
-            copy(node);
-            return;
-          }
-          goto readAgain;
-        }
-        node->readUnlockOrRestart(v, needRestart);
-        if (needRestart) goto readAgain;
-      }
-
-      switch (prefixResult) {
-        case PCCompareResults::Bigger: copy(node); break;
-        case PCCompareResults::Equal: {
-          uint8_t startLevel = (start.getKeyLen() > level) ? start[level] : 0;
-          std::tuple<uint8_t, N *> children[256];
-          uint32_t childrenCount = 0;
-          v                      = N::getChildren(node, startLevel, 255, children, childrenCount);
-          for (uint32_t i = 0; i < childrenCount; ++i) {
-            const uint8_t k = std::get<0>(children[i]);
-            N *n            = std::get<1>(children[i]);
-            if (k == startLevel) {
-              findStart(n, k, level + 1, node, v);
-            } else if (k > startLevel) {
-              copy(n);
-            }
-            if (toContinue != 0) { break; }
-          }
-          break;
-        }
-        case PCCompareResults::Smaller: break;
-      }
-    };
-  std::function<void(N *, uint8_t, uint32_t, const N *, uint64_t)> findEnd = [&copy, &end, &toContinue, &findEnd, this](
-                                                                               N *node, uint8_t nodeK, uint32_t level,
-                                                                               const N *parentNode, uint64_t vp) {
-    if (N::isLeaf(node)) { return; }
-    uint64_t v;
-    PCCompareResults prefixResult;
-    {
-    readAgain:
-      bool needRestart = false;
-      v                = node->readLockOrRestart(needRestart);
-      if (needRestart) goto readAgain;
-
-      prefixResult = checkPrefixCompare(node, end, 255, level, loadKey, needRestart);
-      if (needRestart) goto readAgain;
-
-      parentNode->readUnlockOrRestart(vp, needRestart);
-      if (needRestart) {
-      readParentAgain:
-        vp = parentNode->readLockOrRestart(needRestart);
-        if (needRestart) goto readParentAgain;
-
-        node = N::getChild(nodeK, parentNode);
-
-        parentNode->readUnlockOrRestart(vp, needRestart);
-        if (needRestart) goto readParentAgain;
-
-        if (node == nullptr) { return; }
-        if (N::isLeaf(node)) { return; }
-        goto readAgain;
-      }
-      node->readUnlockOrRestart(v, needRestart);
-      if (needRestart) goto readAgain;
-    }
-    switch (prefixResult) {
-      case PCCompareResults::Smaller: copy(node); break;
-      case PCCompareResults::Equal: {
-        uint8_t endLevel = (end.getKeyLen() > level) ? end[level] : 255;
-        std::tuple<uint8_t, N *> children[256];
-        uint32_t childrenCount = 0;
-        v                      = N::getChildren(node, 0, endLevel, children, childrenCount);
-        for (uint32_t i = 0; i < childrenCount; ++i) {
-          const uint8_t k = std::get<0>(children[i]);
-          N *n            = std::get<1>(children[i]);
-          if (k == endLevel) {
-            findEnd(n, k, level + 1, node, v);
-          } else if (k < endLevel) {
-            copy(n);
-          }
-          if (toContinue != 0) { break; }
-        }
-        break;
-      }
-      case PCCompareResults::Bigger: break;
-    }
-  };
-
-  int restartCount = 0;
-restart:
-  if (restartCount++) yield(restartCount);
-  bool needRestart = false;
-
-  resultsFound = 0;
-
-  uint32_t level = 0;
-  N *node        = nullptr;
-  N *nextNode    = root;
-  N *parentNode;
-  uint64_t v = 0;
-  uint64_t vp;
-
-  while (true) {
-    parentNode = node;
-    vp         = v;
-    node       = nextNode;
-    PCEqualsResults prefixResult;
-    v = node->readLockOrRestart(needRestart);
-    if (needRestart) goto restart;
-    prefixResult = checkPrefixEquals(node, level, start, end, loadKey, needRestart);
-    if (needRestart) goto restart;
-    if (parentNode != nullptr) {
-      parentNode->readUnlockOrRestart(vp, needRestart);
-      if (needRestart) goto restart;
-    }
-    node->readUnlockOrRestart(v, needRestart);
-    if (needRestart) goto restart;
-
-    switch (prefixResult) {
-      case PCEqualsResults::NoMatch: {
-        return false;
-      }
-      case PCEqualsResults::Contained: {
-        copy(node);
-        break;
-      }
-      case PCEqualsResults::BothMatch: {
-        uint8_t startLevel = (start.getKeyLen() > level) ? start[level] : 0;
-        uint8_t endLevel   = (end.getKeyLen() > level) ? end[level] : 255;
-        if (startLevel != endLevel) {
-          std::tuple<uint8_t, N *> children[256];
-          uint32_t childrenCount = 0;
-          v                      = N::getChildren(node, startLevel, endLevel, children, childrenCount);
-          for (uint32_t i = 0; i < childrenCount; ++i) {
-            const uint8_t k = std::get<0>(children[i]);
-            N *n            = std::get<1>(children[i]);
-            if (k == startLevel) {
-              findStart(n, k, level + 1, node, v);
-            } else if (k > startLevel && k < endLevel) {
-              copy(n);
-            } else if (k == endLevel) {
-              findEnd(n, k, level + 1, node, v);
-            }
-            if (toContinue) { break; }
-          }
-        } else {
-          nextNode = N::getChild(startLevel, node);
-          node->readUnlockOrRestart(v, needRestart);
-          if (needRestart) goto restart;
-          level++;
-          continue;
-        }
-        break;
-      }
-    }
-    break;
-  }
-  if (toContinue != 0) {
-    loadKey(toContinue, continueKey);
-    return true;
-  } else {
-    return false;
-  }
-}
-
-TupleID Tree::checkKey(const TupleID TupleID, const Key &k) const {
-  Key kt;
-  this->loadKey(TupleID, kt);
-  if (k == kt) { return TupleID; }
-  return 0;
-}
-
-void Tree::insert(const Key &k, TupleID TupleID, ThreadInfo &epocheInfo) {
+void Tree::insert(const Key &k, TupleID tid, ThreadInfo &epocheInfo) {
   EpocheGuard epocheGuard(epocheInfo);
   int restartCount = 0;
 restart:
@@ -352,8 +121,8 @@ restart:
         // 1) Create new node which will be parent of node, Set common prefix, level to this node
         auto newNode = new N4(node->getPrefix(), nextLevel - level);
 
-        // 2)  add node and (TupleID, *k) as children
-        newNode->insert(k[nextLevel], N::setLeaf(TupleID));
+        // 2)  add node and (tid, *k) as children
+        newNode->insert(k[nextLevel], N::setLeaf(tid));
         newNode->insert(nonMatchingKey, node);
 
         // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
@@ -375,7 +144,7 @@ restart:
     if (needRestart) goto restart;
 
     if (nextNode == nullptr) {
-      N::insertAndUnlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(TupleID), needRestart,
+      N::insertAndUnlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart,
                          epocheInfo);
       if (needRestart) goto restart;
       return;
@@ -395,7 +164,7 @@ restart:
 
       if (key == k) {
         // upsert
-        N::change(node, k[level], N::setLeaf(TupleID));
+        N::change(node, k[level], N::setLeaf(tid));
         node->writeUnlock();
         return;
       }
@@ -405,7 +174,7 @@ restart:
       while (key[level + prefixLength] == k[level + prefixLength]) { prefixLength++; }
 
       auto n4 = new N4(&k[level], prefixLength);
-      n4->insert(k[level + prefixLength], N::setLeaf(TupleID));
+      n4->insert(k[level + prefixLength], N::setLeaf(tid));
       n4->insert(key[level + prefixLength], nextNode);
       N::change(node, k[level - 1], n4);
       node->writeUnlock();
@@ -416,7 +185,7 @@ restart:
   }
 }
 
-void Tree::remove(const Key &k, TupleID TupleID, ThreadInfo &threadInfo) {
+void Tree::remove(const Key &k, TupleID tid, ThreadInfo &threadInfo) {
   EpocheGuard epocheGuard(threadInfo);
   int restartCount = 0;
 restart:
@@ -457,7 +226,7 @@ restart:
           return;
         }
         if (N::isLeaf(nextNode)) {
-          if (N::getLeaf(nextNode) != TupleID) { return; }
+          if (N::getLeaf(nextNode) != tid) { return; }
           assert(parentNode == nullptr || node->getCount() != 1);
           if (node->getCount() == 2 && parentNode != nullptr) {
             parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
@@ -510,102 +279,4 @@ restart:
   }
 }
 
-inline typename Tree::CheckPrefixResult Tree::checkPrefix(N *n, const Key &k, uint32_t &level) {
-  if (n->hasPrefix()) {
-    if (k.getKeyLen() <= level + n->getPrefixLength()) { return CheckPrefixResult::NoMatch; }
-    for (uint32_t i = 0; i < std::min(n->getPrefixLength(), maxStoredPrefixLength); ++i) {
-      if (n->getPrefix()[i] != k[level]) { return CheckPrefixResult::NoMatch; }
-      ++level;
-    }
-    if (n->getPrefixLength() > maxStoredPrefixLength) {
-      level = level + (n->getPrefixLength() - maxStoredPrefixLength);
-      return CheckPrefixResult::OptimisticMatch;
-    }
-  }
-  return CheckPrefixResult::Match;
-}
-
-typename Tree::CheckPrefixPessimisticResult Tree::checkPrefixPessimistic(N *n, const Key &k, uint32_t &level,
-                                                                         uint8_t &nonMatchingKey,
-                                                                         Prefix &nonMatchingPrefix,
-                                                                         LoadKeyFunction loadKey, bool &needRestart) {
-  if (n->hasPrefix()) {
-    uint32_t prevLevel = level;
-    Key kt;
-    for (uint32_t i = 0; i < n->getPrefixLength(); ++i) {
-      if (i == maxStoredPrefixLength) {
-        auto anyTupleID = N::getAnyChildTupleID(n, needRestart);
-        if (needRestart) return CheckPrefixPessimisticResult::Match;
-        loadKey(anyTupleID, kt);
-      }
-      uint8_t curKey = i >= maxStoredPrefixLength ? kt[level] : n->getPrefix()[i];
-      if (curKey != k[level]) {
-        nonMatchingKey = curKey;
-        if (n->getPrefixLength() > maxStoredPrefixLength) {
-          if (i < maxStoredPrefixLength) {
-            auto anyTupleID = N::getAnyChildTupleID(n, needRestart);
-            if (needRestart) return CheckPrefixPessimisticResult::Match;
-            loadKey(anyTupleID, kt);
-          }
-          memcpy(nonMatchingPrefix, &kt[0] + level + 1,
-                 std::min((n->getPrefixLength() - (level - prevLevel) - 1), maxStoredPrefixLength));
-        } else {
-          memcpy(nonMatchingPrefix, n->getPrefix() + i + 1, n->getPrefixLength() - i - 1);
-        }
-        return CheckPrefixPessimisticResult::NoMatch;
-      }
-      ++level;
-    }
-  }
-  return CheckPrefixPessimisticResult::Match;
-}
-
-typename Tree::PCCompareResults Tree::checkPrefixCompare(const N *n, const Key &k, uint8_t fillKey, uint32_t &level,
-                                                         LoadKeyFunction loadKey, bool &needRestart) {
-  if (n->hasPrefix()) {
-    Key kt;
-    for (uint32_t i = 0; i < n->getPrefixLength(); ++i) {
-      if (i == maxStoredPrefixLength) {
-        auto anyTupleID = N::getAnyChildTupleID(n, needRestart);
-        if (needRestart) return PCCompareResults::Equal;
-        loadKey(anyTupleID, kt);
-      }
-      uint8_t kLevel = (k.getKeyLen() > level) ? k[level] : fillKey;
-
-      uint8_t curKey = i >= maxStoredPrefixLength ? kt[level] : n->getPrefix()[i];
-      if (curKey < kLevel) {
-        return PCCompareResults::Smaller;
-      } else if (curKey > kLevel) {
-        return PCCompareResults::Bigger;
-      }
-      ++level;
-    }
-  }
-  return PCCompareResults::Equal;
-}
-
-typename Tree::PCEqualsResults Tree::checkPrefixEquals(const N *n, uint32_t &level, const Key &start, const Key &end,
-                                                       LoadKeyFunction loadKey, bool &needRestart) {
-  if (n->hasPrefix()) {
-    Key kt;
-    for (uint32_t i = 0; i < n->getPrefixLength(); ++i) {
-      if (i == maxStoredPrefixLength) {
-        auto anyTupleID = N::getAnyChildTupleID(n, needRestart);
-        if (needRestart) return PCEqualsResults::BothMatch;
-        loadKey(anyTupleID, kt);
-      }
-      uint8_t startLevel = (start.getKeyLen() > level) ? start[level] : 0;
-      uint8_t endLevel   = (end.getKeyLen() > level) ? end[level] : 255;
-
-      uint8_t curKey = i >= maxStoredPrefixLength ? kt[level] : n->getPrefix()[i];
-      if (curKey > startLevel && curKey < endLevel) {
-        return PCEqualsResults::Contained;
-      } else if (curKey < startLevel || curKey > endLevel) {
-        return PCEqualsResults::NoMatch;
-      }
-      ++level;
-    }
-  }
-  return PCEqualsResults::BothMatch;
-}
 }  // namespace ART_OLC

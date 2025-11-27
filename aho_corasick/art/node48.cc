@@ -17,13 +17,6 @@ void N48::insert(uint8_t key, N *n) {
   count++;
 }
 
-template <class NODE>
-void N48::copyTo(NODE *n) const {
-  for (unsigned i = 0; i < 256; i++) {
-    if (childIndex[i] != emptyMarker) { n->insert(i, children[childIndex[i]]); }
-  }
-}
-
 bool N48::change(uint8_t key, N *val) {
   children[childIndex[key]] = val;
   return true;

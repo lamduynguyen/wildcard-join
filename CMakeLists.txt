@@ -33,9 +33,9 @@ add_subdirectory(third_party/croaring)
 # ---------------------------------------------------------------------------
 # Aho-Corasick main library
 # ---------------------------------------------------------------------------
-file(GLOB_RECURSE SOURCE_FILES aho_corasick/**.cc aho_corasick/**/**.h)
+file(GLOB_RECURSE SOURCE_FILES aho_corasick/**.cc aho_corasick/**/**.cc aho_corasick/**/**.h)
 add_library(ahocorasick STATIC ${SOURCE_FILES})
-target_link_libraries(ahocorasick PUBLIC succinct fmt croaring)
+target_link_libraries(ahocorasick PUBLIC succinct fmt croaring tbb)
 target_include_directories(ahocorasick PUBLIC aho_corasick/include)
 
 # ---------------------------------------------------------------------------

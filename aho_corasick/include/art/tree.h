@@ -9,7 +9,7 @@
 
 #include <functional>
 
-namespace ART_OLC {
+namespace ART {
 
 class Tree {
  public:
@@ -19,6 +19,8 @@ class Tree {
 
  private:
   N *const root;
+  LoadKeyFunction loadKey;
+  CheckKeyFunction checkKey;
   Epoche epoche{256};
 
  public:
@@ -135,7 +137,7 @@ class Tree {
   }
 
  public:
-  Tree();
+  Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey);
 
   Tree(const Tree &) = delete;
 
@@ -145,14 +147,13 @@ class Tree {
 
   ThreadInfo getThreadInfo();
 
-  TupleID lookup(const Key &k, const LoadKeyFunction &loadKey, const CheckKeyFunction &checkKey,
-                 ThreadInfo &threadEpocheInfo) const;
+  TupleID lookup(const Key &k, ThreadInfo &threadEpocheInfo) const;
 
-  void insert(const Key &k, TupleID TupleID, const LoadKeyFunction &loadKey, ThreadInfo &epocheInfo);
+  void insert(const Key &k, TupleID TupleID, ThreadInfo &epocheInfo);
 
   void remove(const Key &k, TupleID TupleID, ThreadInfo &epocheInfo);
 };
 
-}  // namespace ART_OLC
+}  // namespace ART
 
 #endif  // ART_OPTIMISTICLOCK_COUPLING_N_H

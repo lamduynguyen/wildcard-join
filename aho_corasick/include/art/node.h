@@ -17,7 +17,7 @@
 
 using TupleID = uint64_t;
 
-namespace ART_OLC {
+namespace ART {
 /*
  * SynchronizedTree
  * LockCouplingTree
@@ -46,8 +46,9 @@ class N {
   std::atomic<uint64_t> typeVersionLockObsolete{0b100};
   // version 1, unlocked, not obsolete
   uint32_t prefixCount = 0;
-
   uint8_t count = 0;
+  N *suffixLink = nullptr;
+  N *outputLink = nullptr;
   Prefix prefix;
 
   void setType(NTypes type);
@@ -362,5 +363,5 @@ class N256 : public N {
 
   uint64_t getChildren(uint8_t start, uint8_t end, std::tuple<uint8_t, N *> *&children, uint32_t &childrenCount) const;
 };
-}  // namespace ART_OLC
+}  // namespace ART
 #endif  // ART_OPTIMISTIC_LOCK_COUPLING_N_H

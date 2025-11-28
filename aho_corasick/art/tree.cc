@@ -6,9 +6,10 @@
 #include "art/node.h"
 #include "art/tree.h"
 
-namespace ART_OLC {
+namespace ART {
 
-Tree::Tree() : root(new N256(nullptr, 0)) {}
+Tree::Tree(LoadKeyFunction loadKey, CheckKeyFunction checkKey)
+    : root(new N256(nullptr, 0)), loadKey(loadKey), checkKey(checkKey) {}
 
 Tree::~Tree() {
   N::deleteChildren(root);
@@ -24,8 +25,7 @@ void yield(int count) {
     _mm_pause();
 }
 
-TupleID Tree::lookup(const Key &k, const LoadKeyFunction &loadKey, const CheckKeyFunction &checkKey,
-                     ThreadInfo &threadEpocheInfo) const {
+TupleID Tree::lookup(const Key &k, ThreadInfo &threadEpocheInfo) const {
   EpocheGuardReadonly epocheGuard(threadEpocheInfo);
   int restartCount = 0;
 restart:
@@ -78,7 +78,7 @@ restart:
   }
 }
 
-void Tree::insert(const Key &k, TupleID tid, const LoadKeyFunction &loadKey, ThreadInfo &epocheInfo) {
+void Tree::insert(const Key &k, TupleID tid, ThreadInfo &epocheInfo) {
   EpocheGuard epocheGuard(epocheInfo);
   int restartCount = 0;
 restart:
@@ -278,4 +278,4 @@ restart:
   }
 }
 
-}  // namespace ART_OLC
+}  // namespace ART

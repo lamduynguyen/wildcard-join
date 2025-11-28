@@ -9,7 +9,7 @@
 #include <cassert>
 #include <iostream>
 
-namespace ART_OLC {
+namespace ART {
 
 DeletionList::~DeletionList() {
   assert(deletitionListCount == 0 && headDeletionList == nullptr);
@@ -133,6 +133,6 @@ DeletionList &ThreadInfo::getDeletionList() const { return deletionList; }
 
 Epoche &ThreadInfo::getEpoche() const { return epoche; }
 
-}  // namespace ART_OLC
+}  // namespace ART
 
 #endif  // EPOCHE_CPP

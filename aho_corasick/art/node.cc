@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cassert>
 
-namespace ART_OLC {
+namespace ART {
 
 void N::setType(NTypes type) { typeVersionLockObsolete.fetch_add(convertTypeToVersion(type)); }
 
@@ -316,4 +316,4 @@ uint64_t N::getChildren(const N *node, uint8_t start, uint8_t end, std::tuple<ui
   assert(false);
   __builtin_unreachable();
 }
-}  // namespace ART_OLC
+}  // namespace ART

@@ -3,7 +3,7 @@
 
 #include "art/node.h"
 
-namespace ART_OLC {
+namespace ART {
 
 bool N256::isFull() const { return false; }
 
@@ -67,4 +67,4 @@ restart:
   if (needRestart) goto restart;
   return v;
 }
-}  // namespace ART_OLC
+}  // namespace ART

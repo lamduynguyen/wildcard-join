@@ -4,7 +4,7 @@
 
 #include "art/node.h"
 
-namespace ART_OLC {
+namespace ART {
 
 bool N16::isFull() const { return count == 16; }
 
@@ -92,4 +92,4 @@ restart:
   if (needRestart) goto restart;
   return v;
 }
-}  // namespace ART_OLC
+}  // namespace ART

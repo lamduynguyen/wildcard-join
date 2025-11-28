@@ -3,7 +3,7 @@
 
 #include "art/node.h"
 
-namespace ART_OLC {
+namespace ART {
 
 void N4::deleteChildren() {
   for (uint32_t i = 0; i < count; ++i) {
@@ -92,4 +92,4 @@ restart:
   if (needRestart) goto restart;
   return v;
 }
-}  // namespace ART_OLC
+}  // namespace ART

@@ -12,37 +12,32 @@
 namespace aho_corasick {
 
 using PatternIndexType = std::pair<uint32_t, uint8_t>;
-using EmitType         = std::vector<PatternIndexType>;
 
-struct ThreadLocalInfo {
-  std::vector<std::string> &pattern;
-  std::vector<EmitType> &pattern_indices;
-  ART_OLC::ThreadInfo &art_tlocal;
+struct EmitType {
+  std::vector<PatternIndexType> emit;
+  std::mutex latch;
 
-  ThreadLocalInfo(std::vector<std::string> &pattern, std::vector<EmitType> &pattern_indices,
-                  ART_OLC::ThreadInfo art_tlocal)
-      : pattern(pattern), pattern_indices(pattern_indices), art_tlocal(art_tlocal) {}
-
-  ~ThreadLocalInfo() = default;
-
-  void LoadKey(TupleID tid, Key &key);
-  auto CheckKey(const TupleID tid, const Key &k) -> bool;
+  inline auto Append(PatternIndexType index) {
+    std::lock_guard<std::mutex> lock(latch);
+    emit.emplace_back(index);
+  }
 };
 
 class AhoCorasick {
  public:
-  AhoCorasick();
+  AhoCorasick(uint64_t no_patterns);
   ~AhoCorasick() = default;
 
-  auto Local() -> ThreadLocalInfo;
-  void Insert(char *keyword_data, uint64_t keyword_size, PatternIndexType keyword_aux_index, ThreadLocalInfo &t);
+  auto Local() -> ART::ThreadInfo;
+  void Insert(char *keyword_data, uint64_t keyword_size, PatternIndexType keyword_aux_index, ART::ThreadInfo &t);
+  void BuildSuffixLink();
   auto Contain(char *keyword_data, uint64_t keyword_size) -> bool;
   auto ParseText(std::string_view text) -> std::vector<EmitType>;
 
  private:
-  std::unique_ptr<ART_OLC::Tree> trie_;
-  tbb::enumerable_thread_specific<std::vector<std::string>> pattern_;
-  tbb::enumerable_thread_specific<std::vector<EmitType>> pattern_indices_;
+  std::unique_ptr<ART::Tree> trie_;
+  std::vector<std::string> pattern_;
+  std::vector<EmitType> pattern_indices_;
 };
 
 }  // namespace aho_corasick

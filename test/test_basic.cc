@@ -12,23 +12,23 @@ TEST(TestArt, InsertAndQuery) {
     cmp_key.set(dataset[tid].c_str(), dataset[tid].size());
     return k == cmp_key;
   };
-  auto trie = ART_OLC::Tree();
+  auto trie = ART::Tree(load_key, check_key);
 
   // Insert dataset
   Key key;
   auto t = trie.getThreadInfo();
   for (auto idx = 0U; idx < dataset.size(); idx++) {
     load_key(idx, key);
-    trie.insert(key, idx, load_key, t);
-    auto tid = trie.lookup(key, load_key, check_key, t);
-    ASSERT_NE(tid, ART_OLC::Tree::INVALID_TID);
+    trie.insert(key, idx, t);
+    auto tid = trie.lookup(key, t);
+    ASSERT_NE(tid, ART::Tree::INVALID_TID);
     ASSERT_TRUE(check_key(tid, key));
   }
 
   // Another separate search
   for (auto idx = 0U; idx < dataset.size(); idx++) {
     key.set(dataset[idx].c_str(), dataset[idx].size());
-    auto tid = trie.lookup(key, load_key, check_key, t);
+    auto tid = trie.lookup(key, t);
     ASSERT_EQ(tid, idx);
   }
 
@@ -37,9 +37,9 @@ TEST(TestArt, InsertAndQuery) {
   for (auto &keyword : false_keywords) {
     keyword += '\0';
     key.set(keyword.c_str(), keyword.size());
-    auto tid = trie.lookup(key, load_key, check_key, t);
-    if (tid != ART_OLC::Tree::INVALID_TID) { fmt::println("Keyword {}", keyword); }
-    ASSERT_EQ(tid, ART_OLC::Tree::INVALID_TID);
+    auto tid = trie.lookup(key, t);
+    if (tid != ART::Tree::INVALID_TID) { fmt::println("Keyword {}", keyword); }
+    ASSERT_EQ(tid, ART::Tree::INVALID_TID);
   }
 }
 
@@ -51,7 +51,7 @@ TEST(TestArt, InsertMany) {
     cmp_key.set(keywords[tid].c_str(), keywords[tid].size());
     return k == cmp_key;
   };
-  auto trie = ART_OLC::Tree();
+  auto trie = ART::Tree(load_key, check_key);
 
   Key key;
   auto t = trie.getThreadInfo();
@@ -66,9 +66,9 @@ TEST(TestArt, InsertMany) {
     buf[len - 1] = '\0';
     keywords.emplace_back(buf, len);
     load_key(line, key);
-    trie.insert(key, line, load_key, t);
-    auto tid = trie.lookup(key, load_key, check_key, t);
-    ASSERT_NE(tid, ART_OLC::Tree::INVALID_TID);
+    trie.insert(key, line, t);
+    auto tid = trie.lookup(key, t);
+    ASSERT_NE(tid, ART::Tree::INVALID_TID);
     ASSERT_EQ(tid, line);
     ASSERT_TRUE(check_key(tid, key));
     line++;
@@ -82,7 +82,7 @@ TEST(TestArt, InsertMany) {
     buf[len - 1] = '\0';
     assert(len == strlen(buf) + 1);  // strlen() always ignore null terminator, i.e., \0
     key.set(buf, len);
-    auto tid = trie.lookup(key, load_key, check_key, t);
+    auto tid = trie.lookup(key, t);
     ASSERT_EQ(tid, line++);
     ASSERT_TRUE(check_key(tid, key));
   }

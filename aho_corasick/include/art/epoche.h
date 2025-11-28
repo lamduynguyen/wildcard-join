@@ -7,7 +7,7 @@
 #include <array>
 #include <atomic>
 
-namespace ART_OLC {
+namespace ART {
 
 struct LabelDelete {
   std::array<void *, 32> nodes;
@@ -99,6 +99,6 @@ class EpocheGuardReadonly {
 
 inline ThreadInfo::~ThreadInfo() { deletionList.localEpoche.store(std::numeric_limits<uint64_t>::max()); }
 
-}  // namespace ART_OLC
+}  // namespace ART
 
 #endif  // ART_EPOCHE_H

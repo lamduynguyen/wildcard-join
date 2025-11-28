@@ -202,32 +202,6 @@ void N::readUnlockOrRestart(uint64_t startRead, bool &needRestart) const {
   needRestart = (startRead != typeVersionLockObsolete.load());
 }
 
-uint32_t N::getPrefixLength() const { return prefixCount; }
-
-bool N::hasPrefix() const { return prefixCount > 0; }
-
-uint32_t N::getCount() const { return count; }
-
-const uint8_t *N::getPrefix() const { return prefix; }
-
-void N::setPrefix(const uint8_t *prefix, uint32_t length) {
-  if (length > 0) {
-    memcpy(this->prefix, prefix, std::min(length, maxStoredPrefixLength));
-    prefixCount = length;
-  } else {
-    prefixCount = 0;
-  }
-}
-
-void N::addPrefixBefore(N *node, uint8_t key) {
-  uint32_t prefixCopyCount = std::min(maxStoredPrefixLength, node->getPrefixLength() + 1);
-  memmove(this->prefix + prefixCopyCount, this->prefix,
-          std::min(this->getPrefixLength(), maxStoredPrefixLength - prefixCopyCount));
-  memcpy(this->prefix, node->prefix, std::min(prefixCopyCount, node->getPrefixLength()));
-  if (node->getPrefixLength() < maxStoredPrefixLength) { this->prefix[prefixCopyCount - 1] = key; }
-  this->prefixCount += node->getPrefixLength() + 1;
-}
-
 bool N::isLeaf(const N *n) {
   return (reinterpret_cast<uint64_t>(n) & (static_cast<uint64_t>(1) << 63)) == (static_cast<uint64_t>(1) << 63);
 }

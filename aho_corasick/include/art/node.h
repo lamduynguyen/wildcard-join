@@ -18,25 +18,12 @@
 using TupleID = uint64_t;
 
 namespace ART {
-/*
- * SynchronizedTree
- * LockCouplingTree
- * LockCheckFreeReadTree
- * UnsynchronizedTree
- */
 
 enum class NTypes : uint8_t { N4 = 0, N16 = 1, N48 = 2, N256 = 3 };
 
-static constexpr uint32_t maxStoredPrefixLength = 11;
-
-using Prefix = uint8_t[maxStoredPrefixLength];
-
 class N {
  protected:
-  N(NTypes type, const uint8_t *prefix, uint32_t prefixLength) {
-    setType(type);
-    setPrefix(prefix, prefixLength);
-  }
+  N(NTypes type) { setType(type); }
 
   N(const N &) = delete;
 
@@ -45,11 +32,9 @@ class N {
   // 2b type 60b version 1b lock 1b obsolete
   std::atomic<uint64_t> typeVersionLockObsolete{0b100};
   // version 1, unlocked, not obsolete
-  uint32_t prefixCount = 0;
   uint8_t count = 0;
   N *suffixLink = nullptr;
   N *outputLink = nullptr;
-  Prefix prefix;
 
   void setType(NTypes type);
 
@@ -93,16 +78,6 @@ class N {
   static void removeAndUnlock(N *node, uint64_t v, uint8_t key, N *parentNode, uint64_t parentVersion,
                               uint8_t keyParent, bool &needRestart, ThreadInfo &threadInfo);
 
-  bool hasPrefix() const;
-
-  const uint8_t *getPrefix() const;
-
-  void setPrefix(const uint8_t *prefix, uint32_t length);
-
-  void addPrefixBefore(N *node, uint8_t key);
-
-  uint32_t getPrefixLength() const;
-
   static TupleID getLeaf(const N *n);
 
   static bool isLeaf(const N *n);
@@ -143,7 +118,7 @@ class N {
       return;
     }
 
-    auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+    auto nBig = new biggerN();
     n->copyTo(nBig);
     nBig->insert(key, val);
 
@@ -178,7 +153,7 @@ class N {
       return;
     }
 
-    auto nSmall = new smallerN(n->getPrefix(), n->getPrefixLength());
+    auto nSmall = new smallerN();
 
     n->copyTo(nSmall);
     nSmall->remove(key);
@@ -199,7 +174,7 @@ class N4 : public N {
   N *children[4] = {nullptr, nullptr, nullptr, nullptr};
 
  public:
-  N4(const uint8_t *prefix, uint32_t prefixLength) : N(NTypes::N4, prefix, prefixLength) {}
+  N4() : N(NTypes::N4) {}
 
   void insert(uint8_t key, N *n);
 
@@ -263,7 +238,7 @@ class N16 : public N {
   N *const *getChildPos(const uint8_t k) const;
 
  public:
-  N16(const uint8_t *prefix, uint32_t prefixLength) : N(NTypes::N16, prefix, prefixLength) {
+  N16() : N(NTypes::N16) {
     memset(keys, 0, sizeof(keys));
     memset(children, 0, sizeof(children));
   }
@@ -299,7 +274,7 @@ class N48 : public N {
  public:
   static const uint8_t emptyMarker = 48;
 
-  N48(const uint8_t *prefix, uint32_t prefixLength) : N(NTypes::N48, prefix, prefixLength) {
+  N48() : N(NTypes::N48) {
     memset(childIndex, emptyMarker, sizeof(childIndex));
     memset(children, 0, sizeof(children));
   }
@@ -334,9 +309,7 @@ class N256 : public N {
   N *children[256];
 
  public:
-  N256(const uint8_t *prefix, uint32_t prefixLength) : N(NTypes::N256, prefix, prefixLength) {
-    memset(children, '\0', sizeof(children));
-  }
+  N256() : N(NTypes::N256) { memset(children, '\0', sizeof(children)); }
 
   void insert(uint8_t key, N *val);
 

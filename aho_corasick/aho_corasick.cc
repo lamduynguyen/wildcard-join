@@ -21,8 +21,7 @@ AhoCorasick::AhoCorasick(uint64_t no_patterns) : pattern_(no_patterns), pattern_
 
 auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
-void AhoCorasick::Insert(char *keyword, uint64_t keyword_size, PatternIndexType keyword_aux_index,
-                         ART::ThreadInfo &t) {
+void AhoCorasick::Insert(char *keyword, uint64_t keyword_size, PatternIndexType keyword_aux_index, ART::ThreadInfo &t) {
   assert(keyword[keyword_size - 1] == '\0');  // All keywords/patterns must end with null terminator
   Key key;
   key.set(keyword, keyword_size);
@@ -38,7 +37,7 @@ void AhoCorasick::Insert(char *keyword, uint64_t keyword_size, PatternIndexType 
 
 void AhoCorasick::BuildSuffixLink() {
   // Single-threaded for now. TODO: Do we need multi-threaded version?
-  auto bfs_stack = std::stack<ART::N*>();
+  auto bfs_stack = std::stack<ART::N *>();
 }
 
 auto AhoCorasick::Contain(char *keyword_data, uint64_t keyword_size) -> bool {}

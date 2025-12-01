@@ -9,6 +9,10 @@
 
 #include <functional>
 
+namespace aho_corasick {
+class AhoCorasick;
+}
+
 namespace ART {
 
 class Tree {
@@ -18,6 +22,8 @@ class Tree {
   static constexpr TupleID INVALID_TID = std::numeric_limits<TupleID>::max();
 
  private:
+  friend class aho_corasick::AhoCorasick;
+
   N *const root;
   LoadKeyFunction loadKey;
   CheckKeyFunction checkKey;

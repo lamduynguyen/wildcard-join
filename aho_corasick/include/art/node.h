@@ -68,6 +68,15 @@ class N {
    */
   void writeUnlockObsolete() { typeVersionLockObsolete.fetch_add(0b11); }
 
+  /**
+   * Aho-corasick core: Suffix and output link management
+   */
+  void setSuffixLink(N *n);
+  auto getSuffixLink() -> N *;
+  void setOutputLink(N *n);
+  auto getOutputLink() -> N *;
+  auto isTerminalNode() -> bool;
+
   static N *getChild(const uint8_t k, const N *node);
 
   static void insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent,

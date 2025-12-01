@@ -2,7 +2,7 @@
 
 #include <cassert>
 #include <cstring>
-#include <stack>
+#include <queue>
 
 namespace aho_corasick {
 
@@ -28,19 +28,56 @@ void AhoCorasick::Insert(char *keyword, uint64_t keyword_size, PatternIndexType 
   auto tid = trie_->lookup(key, t);
   if (tid == ART::Tree::INVALID_TID) {
     pattern_[keyword_aux_index.first] = std::string(keyword, keyword_size);
-    pattern_indices_[keyword_aux_index.first].Append(keyword_aux_index);
+    pattern_indices_[keyword_aux_index.first].emplace_back(keyword_aux_index);
     trie_->insert(key, keyword_aux_index.first, t);
   } else {
-    pattern_indices_[tid].Append(keyword_aux_index);
+    pattern_indices_[tid].emplace_back(keyword_aux_index);
   }
 }
 
 void AhoCorasick::BuildSuffixLink() {
   // Single-threaded for now. TODO: Do we need multi-threaded version?
-  auto bfs_stack = std::stack<ART::N *>();
-}
+  auto bfs_stack = std::queue<ART::N *>();
+  bfs_stack.emplace(trie_->root);
 
-auto AhoCorasick::Contain(char *keyword_data, uint64_t keyword_size) -> bool {}
+  while (!bfs_stack.empty()) {
+    auto node = bfs_stack.front();
+    bfs_stack.pop();
+
+    // get current node's children
+    std::tuple<uint8_t, ART::N *> children[256];
+    uint32_t children_cnt = 0;
+    ART::N::getChildren(node, 0u, 255u, children, children_cnt);
+
+    // children of the root node all point suffix link to the root
+    if (node == trie_->root) {
+      for (auto i = 0; i < children_cnt; ++i) {
+        const auto n = std::get<1>(children[i]);
+        n->setSuffixLink(node);
+        bfs_stack.emplace(n);
+      }
+      continue;
+    }
+
+    // otherwise, start matching new suffix link
+    for (auto i = 0; i < children_cnt; ++i) {
+      const auto key   = std::get<0>(children[i]);
+      const auto n     = std::get<1>(children[i]);
+      auto suffix_node = node->getSuffixLink();
+      while (suffix_node != trie_->root) {
+        auto possible_suffix = ART::N::getChild(key, suffix_node);
+        if (possible_suffix != nullptr) {
+          suffix_node = possible_suffix;
+          break;
+        }
+        suffix_node = possible_suffix->getSuffixLink();
+      }
+      n->setSuffixLink(suffix_node);
+      n->setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : suffix_node->getOutputLink());
+      bfs_stack.emplace(n);
+    }
+  }
+}
 
 auto AhoCorasick::ParseText(std::string_view text) -> std::vector<EmitType> {
   /**

@@ -102,6 +102,17 @@ void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersi
   }
 }
 
+void N::setSuffixLink(N *n) { suffixLink = n; }
+
+auto N::getSuffixLink() -> N * { return suffixLink; }
+
+void N::setOutputLink(N *n) { outputLink = n; }
+
+auto N::getOutputLink() -> N * { return outputLink; }
+
+// A node is a terminal node only if it has a null-terminator child, i.e., end of a pattern
+auto N::isTerminalNode() -> bool { return getChild('0', this) != nullptr; }
+
 N *N::getChild(const uint8_t k, const N *node) {
   switch (node->getType()) {
     case NTypes::N4: {

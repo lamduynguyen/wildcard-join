@@ -8,9 +8,10 @@
 // #define ART_NOREADLOCK
 // #define ART_NOWRITELOCK
 
-#include <stdint.h>
-#include <string.h>
 #include <atomic>
+#include <cstdint>
+#include <cstring>
+#include <functional>
 #include <utility>
 
 #include "art/epoche.h"
@@ -20,6 +21,7 @@ using TupleID = uint64_t;
 
 namespace ART {
 
+static constexpr uint8_t NULL_TERMINATOR = '\0';
 enum class NTypes : uint8_t { N4 = 0, N16 = 1, N48 = 2, N256 = 3 };
 
 class N {
@@ -81,7 +83,7 @@ class N {
   static N *getChild(const uint8_t k, const N *node);
 
   static void insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent,
-                              uint8_t key, N *val, bool &needRestart, ThreadInfo &threadInfo);
+                              uint8_t key, std::function<N *()> generateVal, bool &needRestart, ThreadInfo &threadInfo);
 
   static bool change(N *node, uint8_t key, N *val);
 
@@ -106,7 +108,7 @@ class N {
 
   template <typename curN, typename biggerN>
   static void insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key,
-                         N *val, bool &needRestart, ThreadInfo &threadInfo) {
+                         std::function<N *()> generateVal, bool &needRestart, ThreadInfo &threadInfo) {
     if (!n->isFull()) {
       if (parentNode != nullptr) {
         parentNode->readUnlockOrRestart(parentVersion, needRestart);
@@ -114,7 +116,7 @@ class N {
       }
       n->upgradeToWriteLockOrRestart(v, needRestart);
       if (needRestart) return;
-      n->insert(key, val);
+      n->insert(key, generateVal());
       n->writeUnlock();
       return;
     }
@@ -130,7 +132,7 @@ class N {
 
     auto nBig = new biggerN();
     n->copyTo(nBig);
-    nBig->insert(key, val);
+    nBig->insert(key, generateVal());
 
     N::change(parentNode, keyParent, nBig);
 
@@ -319,7 +321,7 @@ class N256 : public N {
   N *children[256];
 
  public:
-  N256() : N(NTypes::N256) { memset(children, '\0', sizeof(children)); }
+  N256() : N(NTypes::N256) { memset(children, NULL_TERMINATOR, sizeof(children)); }
 
   void insert(uint8_t key, N *val);
 

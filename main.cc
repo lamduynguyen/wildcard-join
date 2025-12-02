@@ -12,7 +12,7 @@
 
 #define BMAVX2OPT
 
-#include "aho_corasick/aho_corasick.classic_trie.h"
+#include "aho_corasick/aho_corasick.h"
 #include "csv.h"
 #include "fmt/format.h"
 #include "join_strings.h"
@@ -218,11 +218,9 @@ int main() {
   InvertedIndex hashtable;
   std::generate(hashtable.begin(), hashtable.end(), [] { return BitmapVector(0); });
   // Variant 3 env
-  auto trie_cfg = aho_corasick::trie::config();
-  trie_cfg.set_case_insensitive(false);
-  trie_cfg.set_only_whole_words(false);
-  auto trie = aho_corasick::trie(trie_cfg);
+  auto trie = aho_corasick::AhoCorasick();
   std::unordered_set<size_t> trie_result[to_join_substrings.size()];
+  auto trie_local = trie.Local();
 
   // Experiment
   auto variant = EnvOr("VARIANT", 0);
@@ -261,15 +259,16 @@ int main() {
       } else {
         // Aha-Corasick approach
         assert(variant == 3);
-        trie.insert(joinstr);
+        auto real_join_str = std::string(joinstr) + static_cast<char>(ART::NULL_TERMINATOR);
+        trie.Insert(real_join_str.data(), real_join_str.size(), aho_corasick::PatternIndexType(idx, 0), trie_local);
       }
     }
     if (variant == 3) {
-      std::unordered_set<size_t> trie_result[to_join_substrings.size()];
+      trie.BuildSuffixLink();
       for (auto row_index = 0; row_index < data.size(); row_index++) {
         auto &row             = data[row_index];
-        auto per_row_matching = trie.parse_text(row.title);
-        for (auto &emit_pattern : per_row_matching) { trie_result[emit_pattern.get_index()].insert(row_index); }
+        auto per_row_matching = trie.ParseText(row.title);
+        for (auto &emit_pattern : per_row_matching) { trie_result[emit_pattern.pattern_id].insert(row_index); }
       }
     }
   }
@@ -289,7 +288,6 @@ int main() {
                        trie_result[idx].size());
         }
       }
-      fmt::println("Total memory usage: {} B", trie.traverse_tree(true, true, true));
     }
     default: break;
   }

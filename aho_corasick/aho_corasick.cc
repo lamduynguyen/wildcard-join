@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstring>
 #include <queue>
+#include "fmt/format.h"
 
 namespace aho_corasick {
 
@@ -11,29 +12,23 @@ AhoCorasick::AhoCorasick() {
     assert(pattern_.size() > tid);
     key.set(pattern_[tid].first.c_str(), pattern_[tid].first.size());
   };
-  auto check_key = [&](const TupleID tid, const Key &k) -> bool {
-    Key cmp_key;
-    cmp_key.set(pattern_[tid].first.c_str(), pattern_[tid].first.size());
-    return k == cmp_key;
-  };
-  trie_ = std::make_unique<ART::Tree>(load_key, check_key);
+  trie_ = std::make_unique<ART::Tree>(load_key);
 }
 
 auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
-void AhoCorasick::Insert(char *keyword, uint64_t keyword_size, PatternIndexType keyword_aux_index, ART::ThreadInfo &t) {
-  assert(keyword[keyword_size - 1] == '\0');  // All keywords/patterns must end with null terminator
+void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, PatternIndexType keyword_aux_index,
+                         ART::ThreadInfo &t) {
+  assert(keyword[keyword_size - 1] == ART::NULL_TERMINATOR);  // All keywords/patterns must end with null terminator
   Key key;
   key.set(keyword, keyword_size);
-  auto tid = trie_->lookup(key, t);
-  if (tid == ART::Tree::INVALID_TID) {
+  auto new_tid = [&]() {
     auto it =
       pattern_.emplace_back(std::string(keyword, keyword_size), std::vector<PatternIndexType>{keyword_aux_index});
-    auto keyword_id = it - pattern_.begin();
-    trie_->insert(key, keyword_id, t);
-  } else {
-    pattern_[tid].second.emplace_back(keyword_aux_index);
-  }
+    return it - pattern_.begin();
+  };
+  auto upsert = [this, keyword_aux_index](TupleID tid) { pattern_[tid].second.emplace_back(keyword_aux_index); };
+  trie_->insert(key, new_tid, upsert, t);
 }
 
 void AhoCorasick::BuildSuffixLink(uint32_t until_level) {
@@ -54,31 +49,36 @@ void AhoCorasick::BuildSuffixLink(uint32_t until_level) {
     // children of the root node all point suffix link to the root
     if (node == trie_->root) {
       for (auto i = 0; i < children_cnt; ++i) {
-        const auto n = std::get<1>(children[i]);
-        n->setSuffixLink(node);
-        bfs_stack.emplace(n, node_level + 1);
+        const auto key = std::get<0>(children[i]);
+        const auto n   = std::get<1>(children[i]);
+        if (!ART::N::isLeaf(n->getOutputLink())) {
+          n->setSuffixLink(node);
+          bfs_stack.emplace(n, node_level + 1);
+        }
       }
       continue;
     }
 
     // otherwise, start matching new suffix link
     for (auto i = 0; i < children_cnt; ++i) {
-      const auto key   = std::get<0>(children[i]);
-      const auto n     = std::get<1>(children[i]);
-      auto suffix_node = node->getSuffixLink();
-      while (suffix_node != trie_->root) {
-        auto possible_suffix = ART::N::getChild(key, suffix_node);
-        if (possible_suffix != nullptr) {
-          suffix_node = possible_suffix;
-          break;
+      const auto key = std::get<0>(children[i]);
+      const auto n   = std::get<1>(children[i]);
+
+      if (key != ART::NULL_TERMINATOR) {
+        auto suffix_node = node->getSuffixLink();
+        while (suffix_node != trie_->root) {
+          auto possible_suffix = ART::N::getChild(key, suffix_node);
+          if (possible_suffix != nullptr) {
+            suffix_node = possible_suffix;
+            break;
+          }
+          suffix_node = suffix_node->getSuffixLink();
         }
-        suffix_node = possible_suffix->getSuffixLink();
+        n->setSuffixLink(suffix_node);
+        n->setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : suffix_node->getOutputLink());
+        assert((n->getOutputLink() == nullptr) || (ART::N::isLeaf(n->getOutputLink())));
+        bfs_stack.emplace(n, node_level + 1);
       }
-      n->setSuffixLink(suffix_node);
-      n->setOutputLink((suffix_node->isTerminalNode()) ? ART::N::getChild(NULL_TERMINATOR, suffix_node)
-                                                       : suffix_node->getOutputLink());
-      assert((n->getOutputLink() != nullptr) && (ART::N::isLeaf(n->getOutputLink())));
-      if (!n->isTerminalNode()) { bfs_stack.emplace(n, node_level + 1); }
     }
   }
 }
@@ -92,12 +92,40 @@ auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
    */
   OutputEmitType result;
   auto ptr = trie_->root;
+  auto pos = 0UL;
   for (auto c : text) {
-    ptr              = ART::N::getChild(c, ptr);
+    auto possible_next = ART::N::getChild(c, ptr);
+    // Three cases:
+    //  1. If the next possible state is a nullptr, we go back to root
+    //  2. If the next possible state is a leaf (due to lazy expansive + end all keywords as NULL terminator),
+    //      we go back to root and output that pattern
+    //  3. Otherwise, move forward to that state
+    while (ptr != trie_->root && possible_next == nullptr) {
+      ptr           = ptr->getSuffixLink();
+      possible_next = ART::N::getChild(c, ptr);
+    }
+    assert((possible_next == nullptr) || (ptr == trie_->root));  // assertion for case #1
+    if (possible_next != nullptr) {
+      // case #2 & #3
+      ptr = possible_next;
+      if (ptr->isTerminalNode()) {
+        // case #2: matching for 2nd case
+        auto tid = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
+        assert(ART::N::isLeaf(tid));
+        auto keyword_id = ART::N::getLeaf(tid);
+        result.insert(pattern_[keyword_id].second.begin(), pattern_[keyword_id].second.end());
+      }
+    }
+    // Evaluate output links
     auto output_link = ptr->getOutputLink();
-    assert((output_link != nullptr) && (ART::N::isLeaf(output_link)));
-    auto keyword_id = ART::N::getLeaf(output_link);
-    result.insert(pattern_[keyword_id].second.begin(), pattern_[keyword_id].second.end());
+    if (output_link != nullptr) {
+      assert(output_link->isTerminalNode());
+      auto tid = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
+      assert(ART::N::isLeaf(tid));
+      auto keyword_id = ART::N::getLeaf(tid);
+      result.insert(pattern_[keyword_id].second.begin(), pattern_[keyword_id].second.end());
+    }
+    pos++;
   }
   return result;
 }

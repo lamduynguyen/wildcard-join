@@ -12,14 +12,14 @@ TEST(TestArt, InsertAndQuery) {
     cmp_key.set(dataset[tid].c_str(), dataset[tid].size());
     return k == cmp_key;
   };
-  auto trie = ART::Tree(load_key, check_key);
+  auto trie = ART::Tree(load_key);
 
   // Insert dataset
   Key key;
   auto t = trie.getThreadInfo();
   for (auto idx = 0U; idx < dataset.size(); idx++) {
     load_key(idx, key);
-    trie.insert(key, idx, t);
+    trie.insert(key, [&]() { return idx; }, [](TupleID) {}, t);
     auto tid = trie.lookup(key, t);
     ASSERT_NE(tid, ART::Tree::INVALID_TID);
     ASSERT_TRUE(check_key(tid, key));
@@ -51,7 +51,7 @@ TEST(TestArt, InsertMany) {
     cmp_key.set(keywords[tid].c_str(), keywords[tid].size());
     return k == cmp_key;
   };
-  auto trie = ART::Tree(load_key, check_key);
+  auto trie = ART::Tree(load_key);
 
   Key key;
   auto t = trie.getThreadInfo();
@@ -66,7 +66,7 @@ TEST(TestArt, InsertMany) {
     buf[len - 1] = '\0';
     keywords.emplace_back(buf, len);
     load_key(line, key);
-    trie.insert(key, line, t);
+    trie.insert(key, [&]() { return line; }, [](TupleID) {}, t);
     auto tid = trie.lookup(key, t);
     ASSERT_NE(tid, ART::Tree::INVALID_TID);
     ASSERT_EQ(tid, line);

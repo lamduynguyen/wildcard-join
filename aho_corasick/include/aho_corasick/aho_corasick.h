@@ -26,6 +26,8 @@ struct PatternIndexType {
   uint64_t pattern_id : 48;
   uint8_t offset_within_pt;
 
+  // TODO: Should we store offset within text?
+
   PatternIndexType(uint32_t pattern_id, uint8_t offset_within_pt)
       : pattern_id(pattern_id), offset_within_pt(offset_within_pt) {}
 
@@ -50,13 +52,11 @@ using OutputEmitType = std::unordered_set<PatternIndexType, PatternIndexType::Ha
 
 class AhoCorasick {
  public:
-  static constexpr uint8_t NULL_TERMINATOR = '0';
-
   AhoCorasick();
   ~AhoCorasick() = default;
 
   auto Local() -> ART::ThreadInfo;
-  void Insert(char *keyword_data, uint64_t keyword_size, PatternIndexType keyword_aux_index, ART::ThreadInfo &t);
+  void Insert(const char *keyword_data, uint64_t keyword_size, PatternIndexType keyword_aux_index, ART::ThreadInfo &t);
   void BuildSuffixLink(uint32_t until_level = std::numeric_limits<uint32_t>::max());
   auto ParseText(std::string_view text) -> OutputEmitType;
 

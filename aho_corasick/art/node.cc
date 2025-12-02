@@ -77,26 +77,26 @@ bool N::change(N *node, uint8_t key, N *val) {
 }
 
 void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key,
-                        N *val, bool &needRestart, ThreadInfo &threadInfo) {
+                        std::function<N *()> generateVal, bool &needRestart, ThreadInfo &threadInfo) {
   switch (node->getType()) {
     case NTypes::N4: {
       auto n = static_cast<N4 *>(node);
-      insertGrow<N4, N16>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+      insertGrow<N4, N16>(n, v, parentNode, parentVersion, keyParent, key, generateVal, needRestart, threadInfo);
       break;
     }
     case NTypes::N16: {
       auto n = static_cast<N16 *>(node);
-      insertGrow<N16, N48>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+      insertGrow<N16, N48>(n, v, parentNode, parentVersion, keyParent, key, generateVal, needRestart, threadInfo);
       break;
     }
     case NTypes::N48: {
       auto n = static_cast<N48 *>(node);
-      insertGrow<N48, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+      insertGrow<N48, N256>(n, v, parentNode, parentVersion, keyParent, key, generateVal, needRestart, threadInfo);
       break;
     }
     case NTypes::N256: {
       auto n = static_cast<N256 *>(node);
-      insertGrow<N256, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+      insertGrow<N256, N256>(n, v, parentNode, parentVersion, keyParent, key, generateVal, needRestart, threadInfo);
       break;
     }
   }
@@ -110,8 +110,8 @@ void N::setOutputLink(N *n) { outputLink = n; }
 
 auto N::getOutputLink() -> N * { return outputLink; }
 
-// A node is a terminal node only if it has a null-terminator child, i.e., end of a pattern
-auto N::isTerminalNode() -> bool { return getChild('0', this) != nullptr; }
+// A node is a terminal node only if it has a leaf child
+auto N::isTerminalNode() -> bool { return getChild(NULL_TERMINATOR, this) != nullptr; }
 
 N *N::getChild(const uint8_t k, const N *node) {
   switch (node->getType()) {

@@ -80,6 +80,11 @@ class N {
   auto getOutputLink() -> N *;
   auto isTerminalNode() -> bool;
 
+  // Leaf operators
+  static TupleID getLeaf(const N *n);
+  static bool isLeaf(const N *n);
+  static N *setLeaf(TupleID TupleID);
+
   static N *getChild(const uint8_t k, const N *node);
 
   static void insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent,
@@ -89,12 +94,6 @@ class N {
 
   static void removeAndUnlock(N *node, uint64_t v, uint8_t key, N *parentNode, uint64_t parentVersion,
                               uint8_t keyParent, bool &needRestart, ThreadInfo &threadInfo);
-
-  static TupleID getLeaf(const N *n);
-
-  static bool isLeaf(const N *n);
-
-  static N *setLeaf(TupleID TupleID);
 
   static N *getAnyChild(const N *n);
 

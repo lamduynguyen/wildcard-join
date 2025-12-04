@@ -10,7 +10,8 @@
 
 ### Questions to answer
 
-- Cache-aware trie -- currently evaluating ART index
+**Bold** means we have an answer to the question
+
 - Wildcard matching:
   - In the trie indexing's output link, beside storing pattern row-id, also store the matching offset within the pattern
   - Use the offset to answer wildcard `_` and `%`:
@@ -20,7 +21,32 @@
 - Parallelize trie construction, especially when # patterns is large
   - Initialize ART (without path compression and lazy expansion)
   - Is ART with optimistic lock coupling good enough?
-  - Partitioning based on fingerprint?
+  - Can we also partition based on fingerprint?
+    - Maybe we can accept inserting a pattern to multiple partitioned trie
+
+**Cache-aware trie**: ART index looks good
+**Should we implement any optimization for the ART**
+  - *Path compression*: Each inner node in the compressed path may point to different suffix links
+    - Hence, per an inner node, we need to store all of suffix (& output) links using a vector
+    - Also, suffix link calculation must consider compressed paths as single units rather than individual characters
+      - I.e., suffix links under path compression now works on a chunk granularity (with arbitrary size -- depending on the compressed path) rather than character granularity, which makes the whole implementation much more complicated
+    - Memory consumption should also remain the same, as we still have to maintain per-character overheads
+    - The only gain is number of traversal steps on the trie
+      - However, as Aho-Corasick complexity is O(text-length + pattern-size + no-matches), reducing trie traversal cost does not help much
+  - *Lazy expansion*: Turn out not very helpful
+    - Lazy expansion requires storing key elsewhere, not in the tree structure
+    - After matching on a leaf, need to compare the substring with the original key
+      - This additional step turns out to be actually very expensive, especially if our text matches multiple patterns
+      - This contrast with normal trie-based aho-corasick, every single traversal step allows us to match multiple patterns at the same time, rather than each traversal step requires us to compare last suffix with the pattern's keyword again
+      - Working example:
+        - We have a text of `.......shadow.....dowrand`
+        - We have a keyword `shadow`, with a trie of `s` -> `h` -> `a` -> [`d` => `dow`, .... other keys]
+        - At 4th character of the text, we already traverse through [`s`, `h`, `a`] and reach `d` => `dow`
+          - We now have to compare check if `text[4:]` matches the leaf key, which takes the same complexity with original trie
+            - Only better at cache-aware; however, with small node sizes, this doesn't matter very much
+          - As `dow` is a leaf node, we also lose many suffix links generated from this suffix
+            - Likely have to go back to the root node => lose the performance benefits of AhoCorasick's suffix links
+    - Probably we should find a better working example
 
 ### Realistic scenario
 

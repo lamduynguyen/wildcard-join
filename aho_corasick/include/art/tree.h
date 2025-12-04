@@ -101,16 +101,17 @@ class Tree {
         node->upgradeToWriteLockOrRestart(v, needRestart);
         if (needRestart) goto restart;
 
-        Key key;
-        loadKey(N::getLeaf(nextNode), key);
-        if (key == k) {
-          // upsert
+        // Matching key, call upsert() -- Only works with trie. With prefix tree/radix tree/variants, this is wrong
+        if (level + 1 == k.getKeyLen()) {
           auto tid = N::getLeaf(nextNode);
           upsert_fn(tid);
           node->writeUnlock();
           return;
         }
+
         // Create new inner node to replace the leaf
+        Key key;
+        loadKey(N::getLeaf(nextNode), key);
         auto iterNode = new N4();
         N::change(node, nodeKey, iterNode);
         level++;

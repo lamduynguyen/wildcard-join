@@ -103,7 +103,7 @@ auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
       ptr           = ptr->getSuffixLink();
       possible_next = ART::N::getChild(c, ptr);
     }
-    assert((possible_next == nullptr) || (ptr == trie_->root));  // assertion for case #1
+    assert((possible_next != nullptr) || (ptr == trie_->root));  // assertion for case #1
     if (possible_next != nullptr) {
       // case #2 & #3
       ptr = possible_next;
@@ -112,7 +112,7 @@ auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
         auto tid = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
         assert(ART::N::isLeaf(tid));
         auto keyword_id = ART::N::getLeaf(tid);
-        result.insert(pattern_[keyword_id].second.begin(), pattern_[keyword_id].second.end());
+        for (auto &pattern_idx : pattern_[keyword_id].second) { result.emplace(pattern_idx, pos); }
       }
     }
     // Evaluate output links
@@ -122,7 +122,7 @@ auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
       auto tid = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
       assert(ART::N::isLeaf(tid));
       auto keyword_id = ART::N::getLeaf(tid);
-      result.insert(pattern_[keyword_id].second.begin(), pattern_[keyword_id].second.end());
+      for (auto &pattern_idx : pattern_[keyword_id].second) { result.emplace(pattern_idx, pos); }
     }
     pos++;
   }

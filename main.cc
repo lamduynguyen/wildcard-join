@@ -179,7 +179,15 @@ void ProcessNonindexedRows(std::vector<Title> &data, std::vector<Title> &result,
  * 1: Fingerprint join: scan every row, check if row.fp match join substring'fp.
  *      If the match is true, then proceed with substring check similarly to naive join
  * 2: Lazy inverted index join, as explained in README.md
+ * 3: Aho-Corasick-based
  */
+enum BenchmarkVariant : u8 {
+  NESTED_LOOP_JOIN         = 0,  // Naive nested loop join
+  NESTED_LOOP_JOIN_WITH_FP = 1,  // Naive nested loop join, using 1B fingerprint as a cheap filter before actual join
+  INVERTED_INDEX_FP        = 2,  // Bitmap-based inverted index approach, using 1B fingerprint per trigram
+  AHO_CORASICK             = 3,  // Aho-Corasick-based idea
+};
+
 int main() {
   csv::CSVFormat format;
   format.delimiter(',').quote('"').column_names(TITLE_COLUMNS);
@@ -211,8 +219,18 @@ int main() {
   // Calculate join substrings' fingerprint
   auto to_join_substrings =
     std::span(JOIN_SUBSTRINGS).subspan(0, std::min(EnvOr("NO_SUBSTR", JOIN_SUBSTRINGS.size()), JOIN_SUBSTRINGS.size()));
-  std::vector<FingerprintType> join_fps = {};
-  for (auto &joinstr : to_join_substrings) { join_fps.emplace_back(CalculateFingerprint(joinstr)); }
+  std::vector<FingerprintType> join_fps             = {};
+  std::unordered_map<FingerprintType, u64> grouping = {};
+  for (auto &joinstr : to_join_substrings) {
+    join_fps.emplace_back(CalculateFingerprint(joinstr));
+    grouping[join_fps.back()] += 1;
+  }
+  // Debugging if we can partition the join strings
+  fmt::println("==========Debug join strings=============");
+  for (auto [group_fp, count] : grouping) {
+    fmt::println("Group: '{}' -- count {}", std::bitset<8>(group_fp).to_string(), count);
+  }
+  fmt::println("=======================================");
 
   // Variant 2 env
   InvertedIndex hashtable;
@@ -222,8 +240,9 @@ int main() {
   std::unordered_set<size_t> trie_result[to_join_substrings.size()];
   auto trie_local = trie.Local();
 
-  // Experiment
-  auto variant = EnvOr("VARIANT", 0);
+  // Benchmark env
+  const auto variant     = EnvOr("VARIANT", 0);
+  const auto num_threads = EnvOr("THREADS", 1);
   {
     PerfEventBlock perf(row_count);
     for (auto idx = 0; idx < to_join_substrings.size(); idx++) {
@@ -231,14 +250,14 @@ int main() {
       assert(joinstr.length() >= NGRAM_SIZE);
       auto substring_fp = join_fps[idx];
       std::vector<Title> result;
-      if (variant == 0) {
+      if (variant == BenchmarkVariant::NESTED_LOOP_JOIN) {
         // Naive filter impl
         for (auto &row : data) {
           if (row.title.contains(joinstr)) { result.emplace_back(row); }
         }
 
         if (EnvOr("DEBUG", 0)) { fmt::println("Join on string '{}' -- Number of rows: {}", joinstr, result.size()); }
-      } else if (variant == 1) {
+      } else if (variant == BenchmarkVariant::NESTED_LOOP_JOIN_WITH_FP) {
         // Naive fingerprint-based filter
         for (auto &row : data) {
           if ((row.fp & substring_fp) == substring_fp) {
@@ -247,7 +266,7 @@ int main() {
         }
 
         if (EnvOr("DEBUG", 0)) { fmt::println("Join on string '{}' -- Number of rows: {}", joinstr, result.size()); }
-      } else if (variant == 2) {
+      } else if (variant == BenchmarkVariant::INVERTED_INDEX_FP) {
         // Lazy inverted index with 1B fingerprint
         // Process all indexed rows
         ProcessIndexedRows(data, result, joinstr, hashtable, substring_fp);
@@ -258,22 +277,24 @@ int main() {
         if (EnvOr("DEBUG", 0)) { fmt::println("Join on string '{}' -- Number of rows: {}", joinstr, result.size()); }
       } else {
         // Aha-Corasick approach
-        assert(variant == 3);
+        assert(variant == BenchmarkVariant::AHO_CORASICK);
         auto real_join_str = std::string(joinstr) + static_cast<char>(ART::NULL_TERMINATOR);
         trie.Insert(real_join_str.data(), real_join_str.size(), aho_corasick::PatternIndexType(idx, 0), trie_local);
       }
     }
-    if (variant == 3) {
-      trie.BuildSuffixLink();
+    if (variant == BenchmarkVariant::AHO_CORASICK) {
+      trie.BuildSuffixLink(num_threads);
       for (auto row_index = 0; row_index < data.size(); row_index++) {
         auto &row             = data[row_index];
         auto per_row_matching = trie.ParseText(row.title);
-        for (auto &emit_pattern : per_row_matching) { trie_result[emit_pattern.pattern_id].insert(row_index); }
+        for (auto &emit_pattern : per_row_matching) {
+          trie_result[emit_pattern.pattern_index.pattern_id].insert(row_index);
+        }
       }
     }
   }
   switch (variant) {
-    case 2: {
+    case BenchmarkVariant::INVERTED_INDEX_FP: {
       auto non_indexed = 0UL;
       for (auto &row : data) { non_indexed += 1 - static_cast<uint64_t>(row.was_indexed); }
       auto memory_usage = 0UL;
@@ -281,7 +302,7 @@ int main() {
       fmt::println("Number of non-indexed rows: {} -- Total memory usage: {} MB", non_indexed,
                    memory_usage / (1024 * 1024));
     } break;
-    case 3: {
+    case BenchmarkVariant::AHO_CORASICK: {
       if (EnvOr("DEBUG", 0)) {
         for (auto idx = 0; idx < to_join_substrings.size(); idx++) {
           fmt::println("Join on string '{}' -- Number of rows: {}", std::string_view(to_join_substrings[idx]),

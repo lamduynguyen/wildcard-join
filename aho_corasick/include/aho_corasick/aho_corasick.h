@@ -6,10 +6,12 @@
 #include <unordered_set>
 #include <vector>
 
-#include "art/epoche.h"
-#include "art/tree.h"
 #include "tbb/concurrent_vector.h"
 #include "tbb/enumerable_thread_specific.h"
+
+#include "art/epoche.h"
+#include "art/tree.h"
+#include "common/typedef.h"
 
 namespace aho_corasick {
 
@@ -57,7 +59,7 @@ class AhoCorasick {
 
   auto Local() -> ART::ThreadInfo;
   void Insert(const char *keyword_data, uint64_t keyword_size, PatternIndexType keyword_aux_index, ART::ThreadInfo &t);
-  void BuildSuffixLink(uint32_t until_level = std::numeric_limits<uint32_t>::max());
+  void BuildSuffixLink(u16 number_of_threads = 0);
   auto ParseText(std::string_view text) -> OutputEmitType;
 
  private:

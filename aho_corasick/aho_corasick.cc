@@ -31,7 +31,7 @@ void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, PatternInde
   trie_->insert(key, new_tid, upsert, t);
 }
 
-void AhoCorasick::BuildSuffixLink(uint32_t until_level) {
+void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
   // Single-threaded for now. TODO: Do we need multi-threaded version?
   auto bfs_stack = std::queue<std::pair<ART::N *, uint32_t>>();
   bfs_stack.emplace(trie_->root, 0);
@@ -39,7 +39,6 @@ void AhoCorasick::BuildSuffixLink(uint32_t until_level) {
   while (!bfs_stack.empty()) {
     auto [node, node_level] = bfs_stack.front();
     bfs_stack.pop();
-    if (node_level >= until_level) { break; }
 
     // get current node's children
     std::tuple<uint8_t, ART::N *> children[256];

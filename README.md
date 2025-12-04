@@ -1,8 +1,6 @@
 # String idea
 
-## Overall ideas
-
-### Aho-Corasick idea
+## Aho-Corasick-based idea
 
 - Partition JOIN_STRINGS by fingerprint for better load balancing: `(row.fp & substring_fp) == substring_fp`
 - Row.title can only contains a pattern only if (row.fp & substring_fp) == substring_fp
@@ -10,7 +8,8 @@
   => We can easily parallelize Trie construction by partitioning according to fingerprint
 - Which also means, we can use full 64-bits fingerprint with full utf8 support, and no need to index it before
 
-**Four criteria to answer**:
+### Questions to answer
+
 - Cache-aware trie -- currently evaluating ART index
 - Wildcard matching:
   - In the trie indexing's output link, beside storing pattern row-id, also store the matching offset within the pattern
@@ -19,8 +18,24 @@
 - If pattern >> data, is Aho-Corasick is still the best solution?
   - Consider Wu-manber algorithm
 - Parallelize trie construction, especially when # patterns is large
+  - Initialize ART (without path compression and lazy expansion)
   - Is ART with optimistic lock coupling good enough?
   - Partitioning based on fingerprint?
+
+### Realistic scenario
+
+- An amazon-like website. Its database contains a `Product` relation:
+  - `Product` has several columns, with three columns `id`, `name`, and `description`
+    - This relation stores all product's information: name, price, the provided description, ....
+- An internal market analyst team want to find out which product group(s) are the hottest
+  - Don't have the product group mapping yet, e.g., a `ProductGroup` relation and a `ProductToGroup` mapping relation
+  - Also, with millions of product, maintaining such a mapping relation does not work
+- Typical solution: Maintain a `Keyword` with following columns:
+  -
+-
+- three relations (amongst the others): `Product`, `Keyword`, and `Pattern`
+
+  - `Keyword` has one column: `keyword` -- containing
 
 ### (Obsolete) Inverted index idea
 
@@ -40,9 +55,9 @@
   - The row IDs we want to evaluate are: `a1 & a2 & a3 & a4`
 - With the row IDs from this intersection, we proceed with normal filter/join query
 
-### Target workloads
+## Target workloads
 
-#### First problem
+### First problem
 
 - Wildcard filtering, e.g., `WHERE col LIKE "%green%"`
   - Bloom filter on all string columns
@@ -52,13 +67,13 @@
   - Or use a per-column dictionary for compression/quick-search
     - Upon join/filter, use the corresponding dictionary
 
-#### Second problem (To clarify)
+### Second problem (To clarify)
 
 - Peter's USSR paper
 - Join on substring, something regex/full-text-search like
   - Prefix, suffix, middle-of-string
 
-#### Example
+### Example
 
 Mostly follow the discussion here: https://cedardb.com/docs/example_datasets/job/
 

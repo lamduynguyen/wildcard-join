@@ -3,7 +3,6 @@
 #include <cassert>
 #include <cstring>
 #include <queue>
-#include "fmt/format.h"
 
 namespace aho_corasick {
 
@@ -16,6 +15,8 @@ AhoCorasick::AhoCorasick() {
 }
 
 auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
+
+auto AhoCorasick::GetRoot() -> ART::N * { return trie_->root; }
 
 void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, PatternIndexType keyword_aux_index,
                          ART::ThreadInfo &t) {
@@ -50,7 +51,7 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
       for (auto i = 0; i < children_cnt; ++i) {
         const auto key = std::get<0>(children[i]);
         const auto n   = std::get<1>(children[i]);
-        if (!ART::N::isLeaf(n->getOutputLink())) {
+        if (!ART::N::isLeaf(n)) {
           n->setSuffixLink(node);
           bfs_stack.emplace(n, node_level + 1);
         }
@@ -65,17 +66,18 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
 
       if (key != ART::NULL_TERMINATOR) {
         auto suffix_node = node->getSuffixLink();
-        while (suffix_node != trie_->root) {
+        do {
           auto possible_suffix = ART::N::getChild(key, suffix_node);
           if (possible_suffix != nullptr) {
             suffix_node = possible_suffix;
             break;
           }
           suffix_node = suffix_node->getSuffixLink();
-        }
+        } while (suffix_node);
+        if (!suffix_node) { suffix_node = trie_->root; }
         n->setSuffixLink(suffix_node);
         n->setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : suffix_node->getOutputLink());
-        assert((n->getOutputLink() == nullptr) || (ART::N::isLeaf(n->getOutputLink())));
+        assert((n->getOutputLink() == nullptr) || (n->getOutputLink()->isTerminalNode()));
         bfs_stack.emplace(n, node_level + 1);
       }
     }

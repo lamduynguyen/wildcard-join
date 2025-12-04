@@ -6,5 +6,6 @@ if(ENABLE_TESTING)
     gtest_discover_tests(${TEST_NAME})
   endfunction()
 
-  ADD_TEST(TestBasic test_basic.cc)
+  ADD_TEST(TestArt test_art.cc)
+  ADD_TEST(TestAhoCorasick test_ahocorasick.cc)
 endif()

@@ -1,6 +1,5 @@
 #include "art/tree.h"
 
-#include "fmt/format.h"
 #include "gtest/gtest.h"
 
 TEST(TestArt, InsertAndQuery) {
@@ -38,7 +37,6 @@ TEST(TestArt, InsertAndQuery) {
     keyword += '\0';
     key.set(keyword.c_str(), keyword.size());
     auto tid = trie.lookup(key, t);
-    if (tid != ART::Tree::INVALID_TID) { fmt::println("Keyword {}", keyword); }
     ASSERT_EQ(tid, ART::Tree::INVALID_TID);
   }
 }

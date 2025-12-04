@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "gtest/gtest_prod.h"
 #include "tbb/concurrent_vector.h"
 #include "tbb/enumerable_thread_specific.h"
 
@@ -74,6 +75,9 @@ class AhoCorasick {
   auto ParseText(std::string_view text) -> OutputEmitType;
 
  private:
+  FRIEND_TEST(TestArt, SuffixLink);
+  auto GetRoot() -> ART::N *;
+
   std::unique_ptr<ART::Tree> trie_;
   // A pair of keyword (in std::string format) and vector of its indexing info (referring back to the relation Pattern)
   tbb::concurrent_vector<std::pair<KeywordType, std::vector<PatternIndexType>>> pattern_;

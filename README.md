@@ -48,21 +48,6 @@
             - Likely have to go back to the root node => lose the performance benefits of AhoCorasick's suffix links
     - Probably we should find a better working example
 
-### Realistic scenario
-
-- An amazon-like website. Its database contains a `Product` relation:
-  - `Product` has several columns, with three columns `id`, `name`, and `description`
-    - This relation stores all product's information: name, price, the provided description, ....
-- An internal market analyst team want to find out which product group(s) are the hottest
-  - Don't have the product group mapping yet, e.g., a `ProductGroup` relation and a `ProductToGroup` mapping relation
-  - Also, with millions of product, maintaining such a mapping relation does not work
-- Typical solution: Maintain a `Keyword` with following columns:
-  -
--
-- three relations (amongst the others): `Product`, `Keyword`, and `Pattern`
-
-  - `Keyword` has one column: `keyword` -- containing
-
 ### (Obsolete) Inverted index idea
 
 - Lazily build the inverted hash index using n-grams of all rows
@@ -81,46 +66,6 @@
   - The row IDs we want to evaluate are: `a1 & a2 & a3 & a4`
 - With the row IDs from this intersection, we proceed with normal filter/join query
 
-## Target workloads
-
-### First problem
-
-- Wildcard filtering, e.g., `WHERE col LIKE "%green%"`
-  - Bloom filter on all string columns
-  - Steal some ideas from here: www.rbanno.net/data/paper/202501_IEEE_CCNC.pdf
-- Join on full string
-  - Use a dictionary compression, e.g., OnPair, to shorten the string value used in join predicate
-  - Or use a per-column dictionary for compression/quick-search
-    - Upon join/filter, use the corresponding dictionary
-
-### Second problem (To clarify)
-
-- Peter's USSR paper
-- Join on substring, something regex/full-text-search like
-  - Prefix, suffix, middle-of-string
-
-### Example
-
-Mostly follow the discussion here: https://cedardb.com/docs/example_datasets/job/
-
-- `LIKE` filtering & join
-  - Join on constant string
-  - Join on another relation
-- (Sub)string matching
-
-**Example for `LIKE Join on another relation`**
-
-Two relations: R and S
-```
-R.name  |   S.name_pattern
-Duy     |   ikt
-Viktor  |
-Till    |
-Maxi    |
-```
-
-`Query`: `SELECT * FROM R, S WHERE R.name LIKE '% S.name_pattern %'`
-
 ## Dependencies
 
 ### Core
@@ -132,6 +77,8 @@ Maxi    |
 `mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. && make -j`
 
 ### Dataset
+
+#### IMDB
 
 - Download `imdb` dataset as extract it into folder `imdb`
 
@@ -147,3 +94,15 @@ After this step, `ls ./imdb` should show multiple csv files and one sql file con
 - In `imdb/title.csv`, row `2522636,\Frag'ile\,,1,2010,,F624,,,,,c0b2e279bce6d3b1717e750a2591bb6d`.
   Fix: remove two `\` characters
 - Remove all escaped-comma (i.e., `\"`)
+
+#### Amazon
+
+- Download the dataset from this link: https://www.kaggle.com/datasets/asaniczka/amazon-uk-products-dataset-2023/data
+  - Assuming the downloaded file is `archive.zip` in `~/Downloads` folder, unzip it
+  - Afterward, we should have file `~/Downloads/archive/amz_uk_processed_data.csv` exists
+- Extract it, copy the above csv file into `amazon` folder, and rename it to `product.csv`
+
+```shell
+mkdir amazon && cd amazon
+mv ~/Downloads/archive/amz_uk_processed_data.csv product.csv
+```

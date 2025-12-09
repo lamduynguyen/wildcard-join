@@ -9,7 +9,7 @@
 
 namespace ART {
 
-Tree::Tree(LoadKeyFunction loadKey) : root(new N256()), loadKey(loadKey) {}
+Tree::Tree() : root(new N256()) {}
 
 Tree::~Tree() {
   N::deleteChildren(root);
@@ -25,7 +25,7 @@ void Tree::yield(int count) const {
     _mm_pause();
 }
 
-TupleID Tree::lookup(const Key &k, ThreadInfo &threadEpocheInfo) const {
+Leaf *Tree::lookup(const Key &k, ThreadInfo &threadEpocheInfo) const {
   EpocheGuardReadonly epocheGuard(threadEpocheInfo);
   int restartCount = 0;
 restart:
@@ -41,19 +41,19 @@ restart:
   v    = node->readLockOrRestart(needRestart);
   if (needRestart) goto restart;
   while (true) {
-    if (k.getKeyLen() <= level) { return INVALID_TID; }
+    if (k.getKeyLen() <= level) { return nullptr; }
     parentNode = node;
     node       = N::getChild(k[level], parentNode);
     parentNode->checkOrRestart(v, needRestart);
     if (needRestart) goto restart;
 
-    if (node == nullptr) { return INVALID_TID; }
+    if (node == nullptr) { return nullptr; }
     if (N::isLeaf(node)) {
       parentNode->readUnlockOrRestart(v, needRestart);
       if (needRestart) goto restart;
 
-      TupleID tid = N::getLeaf(node);
-      return tid;
+      auto leaf = N::getLeaf(node);
+      return ((*leaf) == k) ? leaf : nullptr;
     }
     level++;
 

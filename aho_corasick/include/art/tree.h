@@ -19,21 +19,16 @@ class AhoCorasick;
 namespace ART {
 
 class Tree {
- public:
-  using LoadKeyFunction                = std::function<void(TupleID tid, Key &key)>;
-  static constexpr TupleID INVALID_TID = std::numeric_limits<TupleID>::max();
-
  private:
   friend class aho_corasick::AhoCorasick;
 
   N *const root;
-  LoadKeyFunction loadKey;
   Epoche epoche{256};
 
   void yield(int count) const;
 
  public:
-  Tree(LoadKeyFunction loadKey);
+  Tree();
 
   Tree(const Tree &) = delete;
 
@@ -43,7 +38,7 @@ class Tree {
 
   ThreadInfo getThreadInfo();
 
-  TupleID lookup(const Key &k, ThreadInfo &threadEpocheInfo) const;
+  Leaf *lookup(const Key &k, ThreadInfo &threadEpocheInfo) const;
 
   template <typename NewKeyFn, typename UpsertFn>
   void insert(const Key &k, NewKeyFn &&insert_fn, UpsertFn &&upsert_fn, ThreadInfo &epocheInfo) {
@@ -74,7 +69,7 @@ class Tree {
 
       if (nextNode == nullptr) {
         auto generateVal = [&]() {
-          auto lastNode = N::setLeaf(insert_fn());
+          auto lastNode = N::setLeaf(Leaf::MakeLeaf(k.data, k.getKeyLen(), insert_fn()));
           if (level < k.getKeyLen() - 1) {
             auto range = std::views::iota(level + 1, k.getKeyLen()) | std::views::reverse;
             for (auto idx : range) {
@@ -102,32 +97,33 @@ class Tree {
         if (needRestart) goto restart;
 
         // Matching key, call upsert() -- Only works with trie. With prefix tree/radix tree/variants, this is wrong
-        if (level + 1 == k.getKeyLen()) {
-          auto tid = N::getLeaf(nextNode);
+        auto leaf = reinterpret_cast<Leaf *>(N::getLeaf(nextNode));
+        if (*leaf == k) {
+          // upsert
+          auto tid = N::getLeaf(nextNode)->aux_index;
           upsert_fn(tid);
           node->writeUnlock();
           return;
         }
 
         // Create new inner node to replace the leaf
-        Key key;
-        loadKey(N::getLeaf(nextNode), key);
         auto iterNode = new N4();
         N::change(node, nodeKey, iterNode);
         level++;
-        assert(level < key.getKeyLen());  // prevent inserting when prefix of key exists already
+        assert(level < leaf->key_len);  // prevent inserting when prefix of key exists already
         // Start inserting new intermediate nodes to represent shared prefix
         uint32_t prefixLength = 0;
-        for (; key[level + prefixLength] == k[level + prefixLength]; prefixLength++) {
-          auto nodeKey = key[level + prefixLength];
+        for (; (*leaf)[level + prefixLength] == k[level + prefixLength]; prefixLength++) {
+          auto nodeKey = k[level + prefixLength];
           auto n4      = new N4();
           iterNode->insert(nodeKey, n4);
           iterNode = n4;
         }
-        assert(iterNode->getType() == NTypes::N4);                     // Guarantee to be N4 here
-        assert(k[level + prefixLength] != key[level + prefixLength]);  // should be different key here
-        reinterpret_cast<N4 *>(iterNode)->insert(k[level + prefixLength], N::setLeaf(insert_fn()));
-        reinterpret_cast<N4 *>(iterNode)->insert(key[level + prefixLength], nextNode);
+        assert(iterNode->getType() == NTypes::N4);                         // Guarantee to be N4 here
+        assert(k[level + prefixLength] != (*leaf)[level + prefixLength]);  // should be different key here
+        reinterpret_cast<N4 *>(iterNode)->insert(k[level + prefixLength],
+                                                 N::setLeaf(Leaf::MakeLeaf(k.data, k.getKeyLen(), insert_fn())));
+        reinterpret_cast<N4 *>(iterNode)->insert((*leaf)[level + prefixLength], nextNode);
         node->writeUnlock();
         return;
       }

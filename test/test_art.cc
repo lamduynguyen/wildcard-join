@@ -11,7 +11,7 @@ TEST(TestArt, InsertAndQuery) {
     cmp_key.set(dataset[tid].c_str(), dataset[tid].size());
     return k == cmp_key;
   };
-  auto trie = ART::Tree(load_key);
+  auto trie = ART::Tree();
 
   // Insert dataset
   Key key;
@@ -19,16 +19,16 @@ TEST(TestArt, InsertAndQuery) {
   for (auto idx = 0U; idx < dataset.size(); idx++) {
     load_key(idx, key);
     trie.insert(key, [&]() { return idx; }, [](TupleID) {}, t);
-    auto tid = trie.lookup(key, t);
-    ASSERT_NE(tid, ART::Tree::INVALID_TID);
-    ASSERT_TRUE(check_key(tid, key));
+    auto leaf = trie.lookup(key, t);
+    ASSERT_NE(leaf, nullptr);
+    ASSERT_TRUE(check_key(leaf->aux_index, key));
   }
 
   // Another separate search
   for (auto idx = 0U; idx < dataset.size(); idx++) {
     key.set(dataset[idx].c_str(), dataset[idx].size());
-    auto tid = trie.lookup(key, t);
-    ASSERT_EQ(tid, idx);
+    auto leaf = trie.lookup(key, t);
+    ASSERT_EQ(leaf->aux_index, idx);
   }
 
   // Wrong search
@@ -36,8 +36,8 @@ TEST(TestArt, InsertAndQuery) {
   for (auto &keyword : false_keywords) {
     keyword += '\0';
     key.set(keyword.c_str(), keyword.size());
-    auto tid = trie.lookup(key, t);
-    ASSERT_EQ(tid, ART::Tree::INVALID_TID);
+    auto leaf = trie.lookup(key, t);
+    ASSERT_EQ(leaf, nullptr);
   }
 }
 
@@ -49,7 +49,7 @@ TEST(TestArt, InsertMany) {
     cmp_key.set(keywords[tid].c_str(), keywords[tid].size());
     return k == cmp_key;
   };
-  auto trie = ART::Tree(load_key);
+  auto trie = ART::Tree();
 
   Key key;
   auto t = trie.getThreadInfo();
@@ -65,10 +65,10 @@ TEST(TestArt, InsertMany) {
     keywords.emplace_back(buf, len);
     load_key(line, key);
     trie.insert(key, [&]() { return line; }, [](TupleID) {}, t);
-    auto tid = trie.lookup(key, t);
-    ASSERT_NE(tid, ART::Tree::INVALID_TID);
-    ASSERT_EQ(tid, line);
-    ASSERT_TRUE(check_key(tid, key));
+    auto leaf = trie.lookup(key, t);
+    ASSERT_NE(leaf, nullptr);
+    ASSERT_EQ(leaf->aux_index, line);
+    ASSERT_TRUE(check_key(leaf->aux_index, key));
     line++;
   }
 
@@ -80,9 +80,9 @@ TEST(TestArt, InsertMany) {
     buf[len - 1] = '\0';
     assert(len == strlen(buf) + 1);  // strlen() always ignore null terminator, i.e., \0
     key.set(buf, len);
-    auto tid = trie.lookup(key, t);
-    ASSERT_EQ(tid, line++);
-    ASSERT_TRUE(check_key(tid, key));
+    auto leaf = trie.lookup(key, t);
+    ASSERT_EQ(leaf->aux_index, line++);
+    ASSERT_TRUE(check_key(leaf->aux_index, key));
   }
 }
 

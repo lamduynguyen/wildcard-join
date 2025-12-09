@@ -21,11 +21,17 @@ using TupleID = uint64_t;
 
 namespace ART {
 
+// forward declaration
+class Tree;
+struct Leaf;
+
 static constexpr uint8_t NULL_TERMINATOR = '\0';
 enum class NTypes : uint8_t { N4 = 0, N16 = 1, N48 = 2, N256 = 3 };
 
 class N {
  protected:
+  friend class Tree;
+
   N(NTypes type) { setType(type); }
 
   N(const N &) = delete;
@@ -81,9 +87,9 @@ class N {
   auto isTerminalNode() -> bool;
 
   // Leaf operators
-  static TupleID getLeaf(const N *n);
+  static Leaf *getLeaf(const N *n);
   static bool isLeaf(const N *n);
-  static N *setLeaf(TupleID TupleID);
+  static N *setLeaf(Leaf *leaf);
 
   static N *getChild(const uint8_t k, const N *node);
 
@@ -96,8 +102,6 @@ class N {
                               uint8_t keyParent, bool &needRestart, ThreadInfo &threadInfo);
 
   static N *getAnyChild(const N *n);
-
-  static TupleID getAnyChildTupleID(const N *n, bool &needRestart);
 
   static void deleteChildren(N *node);
 
@@ -177,6 +181,32 @@ class N {
 
   static uint64_t getChildren(const N *node, uint8_t start, uint8_t end, std::tuple<uint8_t, N *> children[],
                               uint32_t &childrenCount);
+};
+
+struct Leaf {
+  uint64_t aux_index;
+  uint32_t key_len;
+  uint8_t key[];
+
+  static auto MakeLeaf(const uint8_t *original_key, uint32_t key_len, uint64_t aux_index) {
+    void *mem = operator new(sizeof(Leaf) + key_len);
+    return new (mem) Leaf(original_key, key_len, aux_index);
+  }
+
+  inline const uint8_t &operator[](std::size_t i) const {
+    assert(i < key_len);
+    return key[i];
+  }
+
+  inline bool operator==(const Key &k) const {
+    if (k.getKeyLen() != key_len) { return false; }
+    return std::memcmp(&k[0], key, key_len) == 0;
+  }
+
+ private:
+  Leaf(const uint8_t *original_key, uint32_t key_len, uint64_t aux_index) : aux_index(aux_index), key_len(key_len) {
+    memcpy(this->key, original_key, key_len);
+  }
 };
 
 class N4 : public N {

@@ -2,11 +2,51 @@
 
 ## Aho-Corasick-based idea
 
-- Partition JOIN_STRINGS by fingerprint for better load balancing: `(row.fp & substring_fp) == substring_fp`
-- Row.title can only contains a pattern only if (row.fp & substring_fp) == substring_fp
-- This also applies to partitions' fingerprint as well
-  => We can easily parallelize Trie construction by partitioning according to fingerprint
-- Which also means, we can use full 64-bits fingerprint with full utf8 support, and no need to index it before
+**High level idea**: Convert the LIKE predicate into a substring matching problem
+
+**Join on LIKE predicate**:
+
+- Build phase:
+  - Convert every pattern into a token sequence automaton
+  - Token == substring
+  - E.g., pattern `%aa%bb_cc` translates to state machine `aa` => `bb` => `cc`
+    - `aa` => `bb` is unbounded gap
+    - `bb` => `cc` is fixed 1-character gap
+  - Per each token, we add to the Aho-Corasick automaton
+    - Implemented using OLC adaptive trie, i.e., ART without path compression and lazy expansion
+    - *Future work claim*: Evaluate other trie variant
+- Probe phase:
+  - Per each document, applying the Aho-Corasick automaton
+  - Per each substring match, find the associated pattern, and
+    - create a new token sequence automaton to represent that pattern
+    - or update the associated token sequence automaton with that pattern
+  - Per any pattern-text matching, there can be multiple automaton
+- How to implement token sequence automaton:
+  - We essentially only have a sequence of states (no graph)
+  - Impl:
+    - Automaton skeleton: A vector of token ID and gaps between each token
+      - Token ID can be a combination of pattern ID & substring index within the pattern
+        - MSB 8 bits for substring index
+        - Other 56 bits of pattern ID
+      - Gap = 0 => unbounded gap. Otherwise, size of the gap
+    - Each automaton is identified/implemented with these properties
+      - Pattern ID
+      - Previous matched token index
+    - In other words, automaton can be represented as a single `uint64_t` that represents the previous matched token ID
+  - Upon matching new substring
+    - Extract the pattern ID from the matched substring/token
+    - Iterate through all being-matched automaton based on this pattern ID
+    - Update and maintain all automata that satisfy the new token (with its position)
+      - I.e., taking care of the the unbounded gap and exact gap
+    - Remove the automata that are disqualified
+
+**Filter on LIKE predicate**:
+
+- Similar to above algorithm
+
+**Possible optimizations**:
+
+- Combined with 1B fingerprint
 
 ### Questions to answer
 
@@ -25,6 +65,9 @@
     - Maybe we can accept inserting a pattern to multiple partitioned trie
 
 **Cache-aware trie**: ART index looks good
+  - Seems like path compression & lazy expansion are not very well compatible with Aho-Corasick
+  - I.e., ART becomes Adaptive trie instead
+**Parallelize trie construction**: Optimistic lock coupling seems good enough
 **Should we implement any optimization for the ART**
   - *Path compression*: Each inner node in the compressed path may point to different suffix links
     - Hence, per an inner node, we need to store all of suffix (& output) links using a vector
@@ -70,7 +113,7 @@
 
 ### Core
 
-`sudo apt-get install autoconf automake libtool curl make cmake g++ libgtest-dev libgmock-dev`
+`sudo apt-get install autoconf automake libtool curl make cmake g++ libgtest-dev libgmock-dev libfmt-dev`
 
 ### Compilation
 

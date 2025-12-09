@@ -217,9 +217,13 @@ bool N::isLeaf(const N *n) {
   return (reinterpret_cast<uint64_t>(n) & (static_cast<uint64_t>(1) << 63)) == (static_cast<uint64_t>(1) << 63);
 }
 
-N *N::setLeaf(TupleID TupleID) { return reinterpret_cast<N *>(TupleID | (static_cast<uint64_t>(1) << 63)); }
+N *N::setLeaf(Leaf *leaf) {
+  return reinterpret_cast<N *>(reinterpret_cast<uintptr_t>(leaf) | (static_cast<uint64_t>(1) << 63));
+}
 
-TupleID N::getLeaf(const N *n) { return (reinterpret_cast<uint64_t>(n) & ((static_cast<uint64_t>(1) << 63) - 1)); }
+Leaf *N::getLeaf(const N *n) {
+  return reinterpret_cast<Leaf *>(reinterpret_cast<uintptr_t>(n) & ((static_cast<uint64_t>(1) << 63) - 1));
+}
 
 std::tuple<N *, uint8_t> N::getSecondChild(N *node, const uint8_t key) {
   switch (node->getType()) {
@@ -259,23 +263,6 @@ void N::deleteNode(N *node) {
     }
   }
   delete node;
-}
-
-TupleID N::getAnyChildTupleID(const N *n, bool &needRestart) {
-  const N *nextNode = n;
-
-  while (true) {
-    const N *node = nextNode;
-    auto v        = node->readLockOrRestart(needRestart);
-    if (needRestart) return 0;
-
-    nextNode = getAnyChild(node);
-    node->readUnlockOrRestart(v, needRestart);
-    if (needRestart) return 0;
-
-    assert(nextNode != nullptr);
-    if (isLeaf(nextNode)) { return getLeaf(nextNode); }
-  }
 }
 
 uint64_t N::getChildren(const N *node, uint8_t start, uint8_t end, std::tuple<uint8_t, N *> children[],

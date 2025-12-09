@@ -61,7 +61,6 @@ struct MatchingOutputType {
 static_assert(sizeof(PatternIndexType) == 8);
 static_assert(sizeof(MatchingOutputType) == 16);
 
-using KeywordType    = std::string;
 using OutputEmitType = std::unordered_set<MatchingOutputType, MatchingOutputType::Hasher>;
 
 class AhoCorasick {
@@ -75,12 +74,12 @@ class AhoCorasick {
   auto ParseText(std::string_view text) -> OutputEmitType;
 
  private:
-  FRIEND_TEST(TestArt, SuffixLink);
+  FRIEND_TEST(TestAhoCorasick, SuffixLink);
   auto GetRoot() -> ART::N *;
 
   std::unique_ptr<ART::Tree> trie_;
   // A pair of keyword (in std::string format) and vector of its indexing info (referring back to the relation Pattern)
-  tbb::concurrent_vector<std::pair<KeywordType, std::vector<PatternIndexType>>> pattern_;
+  tbb::concurrent_vector<std::vector<PatternIndexType>> pattern_;
 };
 
 }  // namespace aho_corasick

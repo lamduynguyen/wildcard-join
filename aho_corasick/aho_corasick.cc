@@ -6,13 +6,7 @@
 
 namespace aho_corasick {
 
-AhoCorasick::AhoCorasick() {
-  auto load_key = [&](TupleID tid, Key &key) {
-    assert(pattern_.size() > tid);
-    key.set(pattern_[tid].first.c_str(), pattern_[tid].first.size());
-  };
-  trie_ = std::make_unique<ART::Tree>(load_key);
-}
+AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART::Tree>()) {}
 
 auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
@@ -24,11 +18,10 @@ void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, PatternInde
   Key key;
   key.set(keyword, keyword_size);
   auto new_tid = [&]() {
-    auto it =
-      pattern_.emplace_back(std::string(keyword, keyword_size), std::vector<PatternIndexType>{keyword_aux_index});
+    auto it = pattern_.emplace_back(std::vector<PatternIndexType>{keyword_aux_index});
     return it - pattern_.begin();
   };
-  auto upsert = [this, keyword_aux_index](TupleID tid) { pattern_[tid].second.emplace_back(keyword_aux_index); };
+  auto upsert = [this, keyword_aux_index](TupleID tid) { pattern_[tid].emplace_back(keyword_aux_index); };
   trie_->insert(key, new_tid, upsert, t);
 }
 
@@ -111,20 +104,20 @@ auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
       ptr = possible_next;
       if (ptr->isTerminalNode()) {
         // case #2: matching for 2nd case
-        auto tid = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
-        assert(ART::N::isLeaf(tid));
-        auto keyword_id = ART::N::getLeaf(tid);
-        for (auto &pattern_idx : pattern_[keyword_id].second) { result.emplace(pattern_idx, pos); }
+        auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
+        assert(ART::N::isLeaf(leaf));
+        auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
+        for (auto &pattern_idx : pattern_[keyword_id]) { result.emplace(pattern_idx, pos); }
       }
     }
     // Evaluate output links
     auto output_link = ptr->getOutputLink();
     if (output_link != nullptr) {
       assert(output_link->isTerminalNode());
-      auto tid = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
-      assert(ART::N::isLeaf(tid));
-      auto keyword_id = ART::N::getLeaf(tid);
-      for (auto &pattern_idx : pattern_[keyword_id].second) { result.emplace(pattern_idx, pos); }
+      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
+      assert(ART::N::isLeaf(leaf));
+      auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
+      for (auto &pattern_idx : pattern_[keyword_id]) { result.emplace(pattern_idx, pos); }
     }
     pos++;
   }

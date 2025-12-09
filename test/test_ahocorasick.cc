@@ -5,7 +5,7 @@
 
 namespace aho_corasick {
 
-TEST(TestArt, SuffixLink) {
+TEST(TestAhoCorasick, SuffixLink) {
   auto dataset = std::vector<std::string>{"he", "she", "his", "hers", "herself", "hero", "sheep", "eep"};
   for (auto &key : dataset) { key += '\0'; }
   auto trie = aho_corasick::AhoCorasick();

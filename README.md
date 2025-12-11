@@ -48,6 +48,47 @@
 
 - Combined with 1B fingerprint
 
+### Wildcard matching phase
+
+- Let's say we have the Aho-Corasick trie
+  - Per every pattern, we split it into multiple substrings, then insert those substrings into the trie (i.e., *building phase*)
+  - It works similarly to a hash join: building a trie (replacing hashtable), then probing the text (i.e., row) using the trie
+- During the *probe phase*, per any text, we may have a vector of `matcher` information
+  - Structure of a `matcher`:
+    - `Pattern ID`: Used to gather all matched substrings per a pattern
+    - `Off_t`: Matched offset within text
+    - `Off_p`: Matched offset within pattern => Used to defined the positional constraints between substrings
+  - We need to convert the vector of `matcher` into a boolean answer: Whether the text matches the whole wildcard pattern or not
+
+**Problem formalization**:
+- We have a text **T** and pattern **P** of following format: `%s1%s2_s3___s4%`
+- The pattern **P** can be defined using a skeleton:
+  - Four substrings: [s1, s2, s3, s4]
+  - `%` represents a gap of arbitrary size, i.e., [0, $\infty$]
+  - `_` represents a gap of one; to support a large gap, requiring multiple `_`
+  - Positional constraints between four substrings:
+    - Off_t(s1) + Size(s1) <= Off_t(s2)
+    - Off_t(s2) + Size(s2) + 1 = Off_t(s3)
+    - Off_t(s3) + Size(s3) + 2 = Off_t(s4) -- Two `_` between s3 and s4
+- If we define that `f(x_off_t, x_off_p) = true` if:
+  - There exists a set of `matcher` that:
+    - Share the same `Pattern ID`
+    - Their `Off_p` form the sequence of `[0, x_off_p)`; meaning we can match all previous substring of the current substring
+    - Their `Off_t` satisfy the positional constraints of the pattern skeleton
+
+**Two observations**:
+- If all gaps are `%`, it means we can simply use a single `f` value to represent the whole `f()` matrix
+  - It is because, during probing the text, at any position of the text, we only have to know the maximum `Off_p` per pattern
+- If all gaps are `_`, it means that we have a nice dynamic-programming problem with the following formula
+  - All `f(arbitrary Off_t, Off_p = 0) = true`
+  - Otherwise, `f(off_t, off_p) = f(off_t - (Off_t(off_p) - Size(off_p) - gap_size), off_p - 1)`, with the right hand side can be interpreted as:
+    - Previous offset = Current offset - size of expected substring - size of gap (i.e., number of `_`)
+
+**Idea**: For matching during probe phase, split the pattern first by `_`, then split by `%`
+- Within the bottom subset (i.e., after two-phase split), we do the single `f` value one
+- Within the top subset (i.e., after the first split by `_`), we do dynamic programming way
+- To prototype the algorithm
+
 ### Questions to answer
 
 **Bold** means we have an answer to the question

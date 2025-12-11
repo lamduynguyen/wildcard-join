@@ -44,6 +44,10 @@ template <typename T>
 void UpdateMin(std::atomic<T> &atomic_val, T value);
 
 // -------------------------------------------------------------------------------------
+/* encoding utilities */
+auto NextUtf8Char(const std::u8string &s, std::size_t &i) -> c32;
+
+// -------------------------------------------------------------------------------------
 /* constexpr utilities */
 template <typename Container>
 constexpr auto Percentile(Container &v, double percent) {

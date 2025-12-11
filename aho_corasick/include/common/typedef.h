@@ -14,3 +14,7 @@ using i8  = int8_t;
 using i16 = int16_t;
 using i32 = int32_t;
 using i64 = int64_t;
+// -------------------------------------------------------------------------------------
+using c8  = char8_t;
+using c16 = char16_t;
+using c32 = char32_t;

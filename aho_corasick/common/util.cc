@@ -90,6 +90,34 @@ void AsmYield([[maybe_unused]] u64 counter) {
 #endif
 }
 
+auto NextUtf8Char(const std::u8string &s, std::size_t &i) -> c32 {
+  const u8 *p = reinterpret_cast<const u8 *>(s.data());
+  auto c      = p[i];
+
+  if (c < 0x80) {
+    // 1-byte ASCII
+    return p[i++];
+  } else if ((c >> 5) == 0x6) {
+    // 2-byte sequence
+    char32_t cp = ((c & 0x1F) << 6) | (p[i + 1] & 0x3F);
+    i += 2;
+    return cp;
+  } else if ((c >> 4) == 0xE) {
+    // 3-byte sequence
+    char32_t cp = ((c & 0x0F) << 12) | ((p[i + 1] & 0x3F) << 6) | (p[i + 2] & 0x3F);
+    i += 3;
+    return cp;
+  } else if ((c >> 3) == 0x1E) {
+    // 4-byte sequence
+    char32_t cp = ((c & 0x07) << 18) | ((p[i + 1] & 0x3F) << 12) | ((p[i + 2] & 0x3F) << 6) | (p[i + 3] & 0x3F);
+    i += 4;
+    return cp;
+  }
+
+  // Invalid UTF-8
+  throw std::runtime_error("Invalid UTF-8 character");
+}
+
 /**
  * @brief Get order-preserving head of key (assuming little-endian)
  */

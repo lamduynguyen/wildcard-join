@@ -8,6 +8,7 @@
 
 using KeyLen = uint32_t;
 
+// TODO: Is this trivial to support UTF-8 encoding here?
 class Key {
  public:
   static constexpr uint32_t stackLen = 128;

@@ -1,4 +1,5 @@
 #include "art/tree.h"
+#include "test_words.h"
 
 #include "gtest/gtest.h"
 
@@ -42,7 +43,7 @@ TEST(TestArt, InsertAndQuery) {
 }
 
 TEST(TestArt, InsertMany) {
-  auto keywords  = std::vector<std::string>{};
+  auto keywords  = LoadTestWords();
   auto load_key  = [&](TupleID tid, Key &key) { key.set(keywords[tid].c_str(), keywords[tid].size()); };
   auto check_key = [&](const TupleID tid, const Key &k) {
     Key cmp_key;
@@ -53,33 +54,18 @@ TEST(TestArt, InsertMany) {
 
   Key key;
   auto t = trie.getThreadInfo();
-  int len;
-  char buf[512];
-  auto f = fopen("test_words.txt", "r");
-
-  // Prepare all keywords
-  auto line = 0U;
-  while (fgets(buf, sizeof(buf), f)) {
-    len          = strlen(buf);
-    buf[len - 1] = '\0';
-    keywords.emplace_back(buf, len);
+  for (auto line = 0U; line < keywords.size(); line++) {
     load_key(line, key);
     trie.insert(key, [&]() { return line; }, [](TupleID) {}, t);
     auto leaf = trie.lookup(key, t);
     ASSERT_NE(leaf, nullptr);
     ASSERT_EQ(leaf->aux_index, line);
     ASSERT_TRUE(check_key(leaf->aux_index, key));
-    line++;
   }
 
   // Test again
-  auto test_f = fopen("test_words.txt", "r");
-  line        = 0U;
-  while (fgets(buf, sizeof(buf), test_f)) {
-    len          = strlen(buf);
-    buf[len - 1] = '\0';
-    assert(len == strlen(buf) + 1);  // strlen() always ignore null terminator, i.e., \0
-    key.set(buf, len);
+  for (auto line = 0U; line < keywords.size(); line++) {
+    load_key(line, key);
     auto leaf = trie.lookup(key, t);
     ASSERT_EQ(leaf->aux_index, line++);
     ASSERT_TRUE(check_key(leaf->aux_index, key));

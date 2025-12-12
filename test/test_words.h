@@ -1,3 +1,12 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <sstream>
+#include <iostream>
+
+static std::vector<std::string> LoadTestWords() {
+    static const char *WORDS = R"WORDS(
 A
 a
 aa
@@ -235884,3 +235893,15 @@ Zythia
 zythum
 Zyzomys
 Zyzzogeton
+)WORDS";
+  std::vector<std::string> result;
+  std::istringstream in(WORDS);
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!line.empty()) {
+      line += '\0';
+      result.emplace_back(line);
+    }
+  }
+  return result;
+}

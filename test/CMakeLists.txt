@@ -8,4 +8,5 @@ if(ENABLE_TESTING)
 
   ADD_TEST(TestArt test_art.cc)
   ADD_TEST(TestAhoCorasick test_ahocorasick.cc)
+  ADD_TEST(TestMatching test_matching.cc)
 endif()

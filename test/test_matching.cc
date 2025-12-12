@@ -31,7 +31,65 @@ bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
   return pidx == plen && sidx == slen;
 }
 
-TEST(TestMatching, DuckDB) {
+bool DPMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
+  // dp[i][j] = whether s[i:] matches p[j:]
+  bool dp[slen + 1][plen + 1] = {};
+  dp[slen][plen]              = true;  // Base case: empty text & empty pattern match
+
+  // handle trailing % at end of pattern
+  for (int j = (int)plen - 1; j >= 0; j--) {
+    if (pdata[j] == PERCENTAGE) {
+      dp[slen][j] = dp[slen][j + 1];  // % can match empty
+    } else {
+      dp[slen][j] = false;
+    }
+  }
+
+  // fill DP table bottom-up
+  for (int i = (int)slen - 1; i >= 0; i--) {
+    for (int j = (int)plen - 1; j >= 0; j--) {
+      const char &pchar = pdata[j];
+
+      if (pchar == PERCENTAGE) {
+        // two options:
+        //    1) % matches zero characters → dp[i][j+1]
+        //    2) % matches one character → dp[i+1][j]
+        dp[i][j] = dp[i][j + 1] || dp[i + 1][j];
+      } else if (pchar == UNDERSCORE) {
+        // "_" must match exactly one character
+        dp[i][j] = dp[i + 1][j + 1];
+      } else {
+        // literal character
+        if (pchar == sdata[i]) {
+          dp[i][j] = dp[i + 1][j + 1];
+        } else {
+          dp[i][j] = false;
+        }
+      }
+    }
+  }
+
+  // Final result: does s[0:] match p[0:] ?
+  return dp[0][0];
+}
+
+bool GreedyMatching(const char *s, size_t slen, const char *p, size_t plen) {
+  int i = 0, j = 0, s_pos = -1, p_pos = -1;
+  while (i < slen) {
+    if (j < plen && (s[i] == p[j] || p[j] == UNDERSCORE))
+      i++, j++;
+    else if (j < plen && p[j] == PERCENTAGE)
+      s_pos = i, p_pos = j++;
+    else if (p_pos != -1)
+      i = ++s_pos, j = p_pos + 1;
+    else
+      return false;
+  }
+  while (j < plen && p[j] == PERCENTAGE) j++;
+  return j == plen;
+}
+
+TEST(TestMatching, All) {
   std::string text = "the quick brown fox jumps over the lazy dog.";
 
   std::vector<std::pair<std::string, bool>> tests = {
@@ -97,11 +155,32 @@ TEST(TestMatching, DuckDB) {
     {"the%q_i_k%b%o%n%f%x%l_z%dog.", true},
     {"%the%q_i_k%b%o%n%f%x%l_z%wrong.", false}};
 
+  // DuckDB Matching
   for (auto &[pat, result] : tests) {
     auto try_pat = DuckDBMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
-    if (try_pat != result) { std::cout << "try pattern: '" << pat << "' return wrong result" << std::endl; }
+    if (try_pat != result) {
+      std::cout << "DuckDB: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
+    }
     EXPECT_EQ(try_pat, result);
   }
+
+  // DP Matching
+  for (auto &[pat, result] : tests) {
+    auto try_pat = DPMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
+    if (try_pat != result) { std::cout << "DP: evaluate pattern: '" << pat << "' return wrong result" << std::endl; }
+    EXPECT_EQ(try_pat, result);
+  }
+
+  // Greedy Matching
+  for (auto &[pat, result] : tests) {
+    auto try_pat = GreedyMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
+    if (try_pat != result) {
+      std::cout << "Greedy: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
+    }
+    EXPECT_EQ(try_pat, result);
+  }
+
+  // AhoCorasick matching
 }
 
 auto main(int argc, char **argv) -> int {

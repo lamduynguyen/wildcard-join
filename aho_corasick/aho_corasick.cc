@@ -114,7 +114,7 @@ auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
     auto output_link = ptr->getOutputLink();
     if (output_link != nullptr) {
       assert(output_link->isTerminalNode());
-      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
+      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, output_link);
       assert(ART::N::isLeaf(leaf));
       auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
       for (auto &pattern_idx : pattern_[keyword_id]) { result.emplace(pattern_idx, pos); }

@@ -28,20 +28,20 @@ namespace aho_corasick {
  * Note that, a keyword may also appear multiple times across multiple patterns.
  */
 struct PatternIndexType {
-  u64 pattern_id : 56;
-  u8 offset_within_pt;
+  u64 pattern_id;
+  u64 offset_within_pt;
 
-  PatternIndexType(u64 pattern_id, uint8_t offset_within_pt)
-      : pattern_id(pattern_id), offset_within_pt(offset_within_pt) {}
+  PatternIndexType(u64 pattern_id, u64 offset_within_pt) : pattern_id(pattern_id), offset_within_pt(offset_within_pt) {}
 };
 
 struct MatchingOutputType {
   PatternIndexType pattern_index;
   u64 offset_within_text;
 
-  MatchingOutputType(PatternIndexType &pattern_index, u64 offset_within_text)
-      : pattern_index(pattern_index), offset_within_text(offset_within_text) {}
+  MatchingOutputType(PatternIndexType &pattern_index, u64 offset_text)
+      : pattern_index(pattern_index), offset_within_text(offset_text) {}
 
+  // These three properties must be unique
   bool operator==(const MatchingOutputType &other) const {
     return pattern_index.pattern_id == other.pattern_index.pattern_id &&
            pattern_index.offset_within_pt == other.pattern_index.offset_within_pt &&
@@ -58,8 +58,8 @@ struct MatchingOutputType {
   };
 };
 
-static_assert(sizeof(PatternIndexType) == 8);
-static_assert(sizeof(MatchingOutputType) == 16);
+static_assert(sizeof(PatternIndexType) == 16);
+static_assert(sizeof(MatchingOutputType) == 24);
 
 using OutputEmitType = std::unordered_set<MatchingOutputType, MatchingOutputType::Hasher>;
 

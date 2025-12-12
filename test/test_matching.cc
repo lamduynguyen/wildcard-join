@@ -4,6 +4,7 @@
 #include "gtest/gtest.h"
 
 #include <cstdlib>
+#include <ranges>
 
 static constexpr auto PERCENTAGE = '%';
 static constexpr auto UNDERSCORE = '_';
@@ -95,47 +96,75 @@ bool GreedyMatching(const char *s, size_t slen, const char *p, size_t plen) {
   return p_idx == plen;
 }
 
+struct Token {
+  std::string view;
+  std::size_t start;  // offset in the original string
+};
+
 bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen) {
-  fmt::println("===========================");
   // Aho-Corasick env
   auto trie = aho_corasick::AhoCorasick();
   auto t    = trie.Local();
 
   // Split patterns into keywords, separated by % and _, and then insert into AhoCorasick's trie
-  auto strw     = std::string_view(p, plen);
-  auto prev_idx = 0U;
-  for (auto idx = 0U; idx < plen; idx++) {
-    if ((strw[idx] == PERCENTAGE) || (strw[idx] == UNDERSCORE)) {
-      if (idx > prev_idx) {
-        auto keyword = std::string(strw.substr(prev_idx, idx - prev_idx)) + '\0';
-        fmt::println("Insert '{}' (size {}) into AhoCorasick", keyword, keyword.size());
-        trie.Insert(keyword.data(), keyword.size(), {prev_idx, 0}, t);
-      }
-      prev_idx = idx + 1;
-    }
+  std::unordered_map<u64, u64> substr_size;
+  auto strw       = std::string_view(p, plen);
+  auto is_delim   = [](char c) { return c == UNDERSCORE || c == PERCENTAGE; };
+  auto next_token = [&](std::string_view s, std::size_t &pos) -> Token {
+    while (pos < s.size() && is_delim(s[pos])) pos++;
+    if (pos >= s.size()) return {{}, std::string_view::npos};  // no more tokens
+    std::size_t start = pos;
+    while (pos < s.size() && !is_delim(s[pos])) pos++;
+    return {std::string(s.substr(start, pos - start)) + '\0', start};
+  };
+  size_t pos = 0;
+
+  while (true) {
+    auto tok = next_token(strw, pos);
+    if (tok.start == std::string::npos) { break; }
+    trie.Insert(tok.view.data(), tok.view.size(), {0, tok.start}, t);
+    substr_size[tok.start] = tok.view.size() - 1;
   }
 
   // Building suffix & output links
   trie.BuildSuffixLink(1);
 
   // Get substring matcher info from
-  auto ac_matchers = trie.ParseText(std::string_view(s, slen));
-  for (auto matcher : ac_matchers) {
-    fmt::println("Matching {} -- {}", matcher.offset_within_text, matcher.pattern_index.offset_within_pt);
-  }
-
-  // Now, matching the text
+  auto ac_matchers    = trie.ParseText(std::string_view(s, slen));
+  auto s_idx          = 0U;
   auto p_idx          = 0U;
   auto star_pos_in_p  = -1U;
   auto last_star_in_s = -1U;
-  for (auto s_idx = 0U; s_idx < slen; s_idx++) {
 
+  while (s_idx < slen) {
+    if (p_idx < plen && p[p_idx] == UNDERSCORE) {
+      p_idx++;
+      s_idx++;
+    } else if (p_idx < plen && p[p_idx] == PERCENTAGE) {
+      last_star_in_s = s_idx;
+      star_pos_in_p  = p_idx++;
+    } else {
+      auto pattern_len = substr_size[p_idx];
+      auto tmp         = aho_corasick::PatternIndexType(0, p_idx);
+      auto output_tp   = aho_corasick::MatchingOutputType(tmp, s_idx + pattern_len - 1);
+      auto matcher_ptr = ac_matchers.find(output_tp);
+      if (p_idx < plen && matcher_ptr != ac_matchers.end()) {
+        assert(std::memcmp(&s[s_idx], &p[p_idx], pattern_len) == 0);
+        p_idx += pattern_len;
+        s_idx += pattern_len;
+      } else if (star_pos_in_p != -1) {
+        s_idx = ++last_star_in_s;
+        p_idx = star_pos_in_p + 1;
+      } else {
+        return false;
+      }
+    }
   }
-
-  return true;
+  while (p_idx < plen && p[p_idx] == PERCENTAGE) { p_idx++; }
+  return p_idx == plen;
 }
 
-TEST(DISABLED_TestMatching, All) {
+TEST(TestMatching, All) {
   std::string text = "the quick brown fox jumps over the lazy dog.";
 
   std::vector<std::pair<std::string, bool>> tests = {
@@ -234,13 +263,6 @@ TEST(DISABLED_TestMatching, All) {
     }
     EXPECT_EQ(try_pat, result);
   }
-}
-
-TEST(TestMatching, AhoCorasick) {
-  std::string text    = "the quick brown fox jumps over the lazy dog.";
-  std::string pattern = "the%lazy%";
-  auto try_pat        = AhoCorasickMatching(text.c_str(), text.size(), pattern.c_str(), pattern.size());
-  EXPECT_EQ(try_pat, true);
 }
 
 auto main(int argc, char **argv) -> int {

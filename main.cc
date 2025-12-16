@@ -279,14 +279,15 @@ int main() {
         // Aha-Corasick approach
         assert(variant == BenchmarkVariant::AHO_CORASICK);
         auto real_join_str = std::string(joinstr) + static_cast<char>(ART::NULL_TERMINATOR);
-        trie.Insert(real_join_str.data(), real_join_str.size(), aho_corasick::PatternIndexType(idx, 0), trie_local);
+        trie.Insert(real_join_str.data(), real_join_str.size(), aho_corasick::PatternIndexType(idx, 0, joinstr.size()),
+                    trie_local);
       }
     }
     if (variant == BenchmarkVariant::AHO_CORASICK) {
       trie.BuildSuffixLink(num_threads);
       for (auto row_index = 0; row_index < data.size(); row_index++) {
         auto &row             = data[row_index];
-        auto per_row_matching = trie.ParseText(row.title);
+        auto per_row_matching = trie.ParseText(row.title.c_str(), row.title.size());
         for (auto &emit_pattern : per_row_matching) {
           trie_result[emit_pattern.pattern_index.pattern_id].insert(row_index);
         }

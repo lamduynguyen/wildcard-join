@@ -12,8 +12,9 @@ auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
 auto AhoCorasick::GetRoot() -> ART::N * { return trie_->root; }
 
-void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, PatternIndexType keyword_aux_index,
+void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, const PatternIndexType &keyword_aux_index,
                          ART::ThreadInfo &t) {
+  assert(keyword_size > 0);                                   // Never accept null key
   assert(keyword[keyword_size - 1] == ART::NULL_TERMINATOR);  // All keywords/patterns must end with null terminator
   Key key;
   key.set(keyword, keyword_size);
@@ -77,7 +78,7 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
   }
 }
 
-auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
+auto AhoCorasick::ParseText(const char *text, size_t text_len) -> OutputEmitType {
   /**
    * Output link logic
    * - In the original AhoCorasick, when following the suffix links, we meet an ART node whose has a NULL TERMINATOR
@@ -85,42 +86,66 @@ auto AhoCorasick::ParseText(std::string_view text) -> OutputEmitType {
    * - In our implementation, we directly store all output links (the NULL TERMINATOR node) as the trie leaf
    */
   OutputEmitType result;
-  auto ptr = trie_->root;
-  auto pos = 0UL;
-  for (auto c : text) {
-    auto possible_next = ART::N::getChild(c, ptr);
-    // Three cases:
-    //  1. If the next possible state is a nullptr, we go back to root
-    //  2. If the next possible state is a leaf (due to lazy expansive + end all keywords as NULL terminator),
-    //      we go back to root and output that pattern
-    //  3. Otherwise, move forward to that state
-    while (ptr != trie_->root && possible_next == nullptr) {
-      ptr           = ptr->getSuffixLink();
-      possible_next = ART::N::getChild(c, ptr);
-    }
-    assert((possible_next != nullptr) || (ptr == trie_->root));  // assertion for case #1
-    if (possible_next != nullptr) {
-      // case #2 & #3
-      ptr = possible_next;
-      if (ptr->isTerminalNode()) {
-        // case #2: matching for 2nd case
-        auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
-        assert(ART::N::isLeaf(leaf));
-        auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
-        for (auto &pattern_idx : pattern_[keyword_id]) { result.emplace(pattern_idx, pos); }
-      }
-    }
-    // Evaluate output links
-    auto output_link = ptr->getOutputLink();
-    if (output_link != nullptr) {
-      assert(output_link->isTerminalNode());
-      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, output_link);
+  auto iterate = StartIterativeParseText(text, text_len);
+  for (auto idx = 0UL; idx < text_len; idx++) {
+    auto next_set = ContinueParseText(iterate);
+    result.merge(next_set);
+  }
+  return result;
+}
+
+auto AhoCorasick::StartIterativeParseText(const char *text, size_t text_len) -> IterativeParseText {
+  auto ret        = IterativeParseText();
+  ret.text        = text;
+  ret.text_len    = text_len;
+  ret.next_offset = 0;
+  ret.ptr         = trie_->root;
+  return ret;
+}
+
+// The caller
+auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
+  OutputEmitType result;
+
+  auto c             = ite.text[ite.next_offset];
+  auto possible_next = ART::N::getChild(c, ite.ptr);
+  // Three cases:
+  //  1. If the next possible state is a nullptr, we go back to root
+  //  2. If the next possible state is a leaf (due to lazy expansive + end all keywords as NULL terminator),
+  //      we go back to root and output that pattern
+  //  3. Otherwise, move forward to that state
+  while (ite.ptr != trie_->root && possible_next == nullptr) {
+    ite.ptr       = ite.ptr->getSuffixLink();
+    possible_next = ART::N::getChild(c, ite.ptr);
+  }
+  assert((possible_next != nullptr) || (ite.ptr == trie_->root));  // assertion for case #1
+  if (possible_next != nullptr) {
+    // case #2 & #3
+    ite.ptr = possible_next;
+    if (ite.ptr->isTerminalNode()) {
+      // case #2: matching for 2nd case
+      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
       assert(ART::N::isLeaf(leaf));
       auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
-      for (auto &pattern_idx : pattern_[keyword_id]) { result.emplace(pattern_idx, pos); }
+      for (auto &pattern_idx : pattern_[keyword_id]) {
+        result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
+      }
     }
-    pos++;
   }
+  // Evaluate output links
+  auto output_link = ite.ptr->getOutputLink();
+  if (output_link != nullptr) {
+    assert(output_link->isTerminalNode());
+    auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, output_link);
+    assert(ART::N::isLeaf(leaf));
+    auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
+    for (auto &pattern_idx : pattern_[keyword_id]) {
+      result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
+    }
+  }
+
+  // Advance next offset in the text for next processing
+  ite.next_offset++;
   return result;
 }
 

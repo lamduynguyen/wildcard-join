@@ -45,17 +45,19 @@ struct Skeleton {
     auto IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) -> bool;
   };
 
+  bool only_wildcard;
   std::vector<Segment> seg;
 
   Skeleton(const char *p, size_t plen, const std::function<void(Token &)> &literal_fn);
   ~Skeleton() = default;
 
-  auto operator[](int idx) -> Segment &;
-  auto IsEmpty() -> bool;
+  inline auto operator[](int idx) -> Segment & { return seg[idx]; }
 
-  auto Size() { return seg.size(); }
+  inline auto IsEmpty() -> bool { return seg.empty(); }
 
-  auto Last() -> Segment & { return seg.back(); }
+  inline auto Size() { return seg.size(); }
+
+  inline auto Last() -> Segment & { return seg.back(); }
 
   static auto SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool;
 };

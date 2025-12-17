@@ -41,7 +41,7 @@ auto Skeleton::Segment::IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) -> 
   return prev_literal_offset[start_pos] == prev_start_pos;
 }
 
-Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) {
+Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) : only_wildcard(true) {
   size_t last_end_pos = 0;
   while (true) {
     Segment match = {};
@@ -66,6 +66,7 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
       prev_start                   = literal.start;
       match.last_literal_start_pos = literal.start;
       literal_fn(literal);
+      only_wildcard = false;
     }
     seg.emplace_back(std::move(match));
   }
@@ -75,10 +76,6 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
     for (int idx = seg.size() - 2; idx >= 0; idx--) { seg[idx].has_suffix_percent = seg[idx + 1].has_prefix_percent; }
   }
 }
-
-auto Skeleton::IsEmpty() -> bool { return seg.empty(); }
-
-auto Skeleton::operator[](int idx) -> Segment & { return seg[idx]; }
 
 // This should only be called if the pattern only contains % and _
 auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool {
@@ -92,7 +89,7 @@ auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen)
       has_percent = true;
     }
   }
-  return slen >= underscore_cnt && has_percent;
+  return (slen == underscore_cnt) || (slen > underscore_cnt && has_percent);
 }
 
 }  // namespace aho_corasick

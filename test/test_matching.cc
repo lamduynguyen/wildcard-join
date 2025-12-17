@@ -98,23 +98,16 @@ bool GreedyMatching(const char *s, size_t slen, const char *p, size_t plen) {
 }
 
 struct ActiveMatch {
-  struct PairHash {
-    std::size_t operator()(const std::pair<u64, u64> &p) const noexcept {
-      // simple but effective hash combine
-      std::size_t h1 = std::hash<u64>{}(p.first);
-      std::size_t h2 = std::hash<u64>{}(p.second);
-      return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
-    }
-  };
-
-  u64 underscore_left = 0;
-  u64 skeleton_idx    = 0;
-  std::unordered_set<std::pair<u64, u64>, PairHash> match;  // A pair of s_idx, p_idx
+  u64 min_text_start_pos = 0;  // The min starting offset in text that we can continue matching for skeleton segment idx
+  u64 segment_idx        = 0;  // The idx of the skeleton segment
+  std::unordered_map<u64, u64> match;  // A mapping of {text_cur - pat_cur => pat_cur}
+  // Within a skeleton segment, the diff between text cursor and pattern cursor always
+  //  remain static for a possible matcher
 };
 
-bool AhoCorasickMatchingOptimize(const char *s, size_t slen, const char *p, size_t plen) {
+bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen) {
   // Aho-Corasick env
-  fmt::println("==========Test pattern '{}'==========", p);
+  // fmt::println("==========Test pattern '{}'==========", p);
   auto trie = aho_corasick::AhoCorasick();
   auto t    = trie.Local();
 
@@ -122,9 +115,11 @@ bool AhoCorasickMatchingOptimize(const char *s, size_t slen, const char *p, size
   auto skeleton = aho_corasick::Skeleton(p, plen, [&](aho_corasick::Token &tok) {
     auto literal = std::string(p + tok.start, tok.len) + '\0';
     trie.Insert(literal.data(), literal.size(), {0, tok.start, tok.len}, t);
-    fmt::println("Insert literal '{}' into Aho-Corasick", literal);
+    // fmt::println("Insert literal '{}' into Aho-Corasick", literal);
   });
-  if (skeleton.IsEmpty()) { return aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, p, plen); }
+  if (skeleton.IsEmpty() || skeleton.only_wildcard) {
+    return aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, p, plen);
+  }
 
   // Building suffix & output links
   trie.BuildSuffixLink(1);
@@ -134,41 +129,40 @@ bool AhoCorasickMatchingOptimize(const char *s, size_t slen, const char *p, size
   auto iterate         = trie.StartIterativeParseText(s, slen);
   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
     auto ac_matchers = trie.ContinueParseText(iterate);
-    auto &sket       = skeleton[instance.skeleton_idx];
-    if (instance.underscore_left > 0) {
-      // Prev sket has some suffix underscore, so we have to skip this much
-      // TODO: We should only skip on a pattern basis, i.e., must check for pattern ID in the ac_matcher part below
-      instance.underscore_left--;
-      continue;
-    }
+    auto &sket       = skeleton[instance.segment_idx];
     for (auto &match : ac_matchers) {
       // Must match within the current considerate pattern
-      if (sket.Contain(match.pattern_index.start_pos)) {
+      // TODO: We should only skip on a pattern basis, i.e., must check for pattern ID in the ac_matcher part below
+      //  Focus on the comparison: match.text_start_pos >= instance.min_text_start_pos
+      if (sket.Contain(match.pattern_index.start_pos) && match.text_start_pos >= instance.min_text_start_pos) {
         auto success = false;
         // Check if start a new matching instance
         if (sket.IsFirstLiteral(match.pattern_index.start_pos)) {
           if (sket.has_prefix_percent) {
             // With prefix percentage, the new 1st literal can start anywhere
-            instance.match.emplace(match.text_start_pos, match.pattern_index.start_pos);
+            instance.match.emplace(match.text_start_pos - match.pattern_index.start_pos, match.pattern_index.start_pos);
             success = true;
           } else {
             // Without prefix percentage, the new 1st literal must start exactly at the sket's first pos
             // This scenario only happens for the 1st literal and the literal is the prefix of the text & pattern
-            assert(instance.skeleton_idx == 0);
-            if (match.text_start_pos == 0) {
-              instance.match.emplace(match.text_start_pos, match.pattern_index.start_pos);
+            assert(instance.segment_idx == 0);
+            if (match.text_start_pos == match.pattern_index.start_pos) {
+              instance.match.emplace(match.text_start_pos - match.pattern_index.start_pos,
+                                     match.pattern_index.start_pos);
               success = true;
             }
           }
         } else {
           // Otherwise, check if there is a previous literal that has the exact gap we are looking for
-          for (auto &[prev_text_idx, prev_pat_pos] : instance.match) {
+          auto diff = match.text_start_pos - match.pattern_index.start_pos;
+          if (instance.match.contains(diff)) {
+            auto prev_pat_pos  = instance.match[diff];
+            auto prev_text_idx = prev_pat_pos + diff;
+            assert(match.text_start_pos >= prev_text_idx);
             if (sket.IsPreviousLiteral(prev_pat_pos, match.pattern_index.start_pos) &&
-                match.text_start_pos >= prev_text_idx &&
                 match.text_start_pos - prev_text_idx == match.pattern_index.start_pos - prev_pat_pos) {
-              instance.match.erase({prev_text_idx, prev_pat_pos});
-              instance.match.emplace(match.text_start_pos, match.pattern_index.start_pos);
-              success = true;
+              instance.match[diff] = match.pattern_index.start_pos;
+              success              = true;
             }
           }
         }
@@ -182,15 +176,15 @@ bool AhoCorasickMatchingOptimize(const char *s, size_t slen, const char *p, size
            * - Current sket is the last one, doesn't have a suffix aho_corasick::PERCENTAGE, and the AhoCorasick matcher
            * states that the current matching is the suffix of the queried text, including suffixed underscores
            */
-          auto next_sket_index = instance.skeleton_idx + 1;
+          auto next_sket_index = instance.segment_idx + 1;
           if ((next_sket_index < skeleton.Size()) ||
               (next_sket_index >= skeleton.Size() && skeleton.Last().has_suffix_percent) ||
               (next_sket_index >= skeleton.Size() && !skeleton.Last().has_suffix_percent &&
                match.text_start_pos + match.pattern_index.keyword_len + sket.suffix_underscore_cnt == slen)) {
-            instance.skeleton_idx++;
-            instance.underscore_left = sket.suffix_underscore_cnt;
+            instance.segment_idx++;
+            instance.min_text_start_pos = end_offset + sket.suffix_underscore_cnt + 1;
             instance.match.clear();
-            if (instance.skeleton_idx >= skeleton.Size()) { return true; }
+            if (instance.segment_idx >= skeleton.Size()) { return true; }
           }
         }
       }
@@ -247,9 +241,6 @@ TEST(TestMatching, All) {
     {"%%", true},
     {"", false},
 
-    // ---- Pattern longer than text ----
-    {"__________________________________________________________________________________", false},
-
     // ---- Deep recursion: % followed by long literal ----
     {"%wildcards like percent symbols and underscores should match incorrectly.", false},
 
@@ -263,7 +254,74 @@ TEST(TestMatching, All) {
 
     // ---- Complex cases combining everything ----
     {"the%q_i_k%b%o%n%f%x%l_z%dog.", true},
-    {"%the%q_i_k%b%o%n%f%x%l_z%wrong.", false}};
+    {"%the%q_i_k%b%o%n%f%x%l_z%wrong.", false},
+
+    // ---- Adjacent wildcard edge cases ----
+    {"%%%%the%%%%", true},
+    {"____", false},    // needs 4 chars
+    {"%_%_%_%", true},  // interleaved wildcards
+    {"%__", true},      // at least 2 chars anywhere
+    {"__%", true},      // at least 2 chars prefix
+    {"_%_%_", true},    // alternating single/any
+
+    // ---- Greedy vs minimal % consumption ----
+    {"%fox jumps over%", true},
+    {"%fox%over%", true},
+    {"%fox%lazy%", true},
+    {"%fox%quick%", false},  // ordering violation
+    {"%quick%fox%lazy%", true},
+    {"%quick%lazy%fox%", false},
+
+    // ---- Long literal anchors ----
+    {"%quick brown fox jumps over the lazy%", true},
+    {"%quick brown fox jumps over the lazi%", false},
+    {"%quick brown fox jumps over the lazy dog.%", true},
+    {"%quick brown fox jumps over the lazy dog._", false},
+
+    // ---- Overlapping literals ----
+    {"%the lazy dog.%", true},
+    {"%lazy dog.lazy%", false},  // repeated literal mismatch
+    {"%the lazy%lazy dog%", false},
+    {"%the lazy%y dog%", false},
+    {"%the lazy% dog%", true},
+    {"%lazy dog%lazy%", false},
+
+    // ---- Underscore precision ----
+    {"the quick brown fox jumps over the lazy d_g.", true},
+    {"the quick brown fox jumps over the lazy do_.", true},
+    {"the quick brown fox jumps over the lazy _og.", true},
+    {"the quick brown fox jumps over the lazy __g.", true},
+    {"the quick brown fox jumps over the lazy ___", false},
+
+    // ---- Alternating wildcard chains ----
+    {"%_%_%_%_%_%_%", true},
+    {"%_%_%_%_%_%_x", false},
+    {"_%_%_%_%_%_%_", true},
+    {"_%_%_%_%_%_%_x", false},
+
+    // ---- Prefix and suffix strictness ----
+    {"the%", true},
+    {"%dog.", true},
+    {"dog.%", false},
+    {"the quick brown%", true},
+    {"quick brown%", false},
+
+    // ---- Lockstep matching ----
+    {"___________________________", false},                  // too short
+    {"____________________________________________", true},  // exact length
+    {"___________________________________________.", true},
+    {"__________________________________________________________________________________", false},
+
+    // ---- Catastrophic backtracking stress ----
+    {"%t%h%e%q%u%i%c%k%b%r%o%w%n%", true},
+    {"%t%h%e%q%u%i%c%k%x%", true},
+    {"%f%o%x%j%u%m%p%s%", true},
+    {"%f%o%x%j%u%m%p%x%", false},
+
+    // ---- Fully anchored but subtle ----
+    {"the%q__ck%b%own%f%x%j%mps%over%l_zy%dog.", true},
+    {"the%q__ck%b%own%f%x%j%mps%over%l_zy%do_.", true},
+  };
 
   // DuckDB Matching
   for (auto &[pat, result] : tests) {
@@ -292,7 +350,7 @@ TEST(TestMatching, All) {
 
   // AhoCorasick matching
   for (auto &[pat, result] : tests) {
-    auto try_pat = AhoCorasickMatchingOptimize(text.c_str(), text.size(), pat.c_str(), pat.size());
+    auto try_pat = AhoCorasickMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
     if (try_pat != result) {
       std::cout << "AhoCorasick: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
     }

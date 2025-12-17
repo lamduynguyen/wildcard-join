@@ -8,7 +8,6 @@
 
 #include "gtest/gtest_prod.h"
 #include "tbb/concurrent_vector.h"
-#include "tbb/enumerable_thread_specific.h"
 
 #include "art/epoche.h"
 #include "art/tree.h"

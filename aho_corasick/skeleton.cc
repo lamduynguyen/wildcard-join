@@ -30,16 +30,22 @@ auto Token::NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token {
   return {start, pos - start};
 };
 
-auto Skeleton::Segment::Contain(u64 start_pos) -> bool { return prev_literal_offset.contains(start_pos); }
+// --------------------------------------------------------------------------------------------
 
-auto Skeleton::Segment::IsFirstLiteral(u64 start_pos) -> bool {
+auto Skeleton::Segment::Contain(u64 start_pos) const -> bool { return prev_literal_offset.contains(start_pos); }
+
+auto Skeleton::Segment::IsFirstLiteral(u64 start_pos) const -> bool {
   return IsPreviousLiteral(std::numeric_limits<u64>::max(), start_pos);
 }
 
-auto Skeleton::Segment::IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) -> bool {
+auto Skeleton::Segment::IsLastLiteral(u64 start_pos) const -> bool { return start_pos == last_literal_start_pos; }
+
+auto Skeleton::Segment::IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) const -> bool {
   assert(Contain(start_pos));
-  return prev_literal_offset[start_pos] == prev_start_pos;
+  return prev_literal_offset.at(start_pos) == prev_start_pos;
 }
+
+// --------------------------------------------------------------------------------------------
 
 Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) : only_wildcard_(true) {
   size_t last_end_pos = 0;
@@ -92,6 +98,37 @@ auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen)
     }
   }
   return (slen == underscore_cnt) || (slen > underscore_cnt && has_percent);
+}
+
+auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher) -> bool {
+  const auto &segment = seg_[matcher.segment_idx];
+  const auto diff     = ac_match.text_start_pos - ac_match.pattern_index.start_pos;
+
+  if (segment.IsFirstLiteral(ac_match.pattern_index.start_pos)) {
+    /**
+     * @brief Two scenarios:
+     * - With prefix percentage, the new 1st literal can start anywhere
+     * - Without prefix percentage, the new 1st literal must start exactly at the sket's first pos
+     *   Also, this scenario only happens for the 1st literal and the literal is the prefix of the text & pattern
+     */
+    if (segment.has_prefix_percent ||
+        (matcher.segment_idx == 0 && ac_match.text_start_pos == ac_match.pattern_index.start_pos)) {
+      matcher.Insert(diff, ac_match.pattern_index.start_pos);
+      return true;
+    }
+  } else if (matcher.Contain(diff)) {
+    // Otherwise, check if there is a previous literal that has the exact gap we are looking for
+    auto prev_pat_pos  = matcher[diff];
+    auto prev_text_idx = prev_pat_pos + diff;
+    assert(ac_match.text_start_pos >= prev_text_idx);
+    if (segment.IsPreviousLiteral(prev_pat_pos, ac_match.pattern_index.start_pos) &&
+        ac_match.text_start_pos - prev_text_idx == ac_match.pattern_index.start_pos - prev_pat_pos) {
+      matcher[diff] = ac_match.pattern_index.start_pos;
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

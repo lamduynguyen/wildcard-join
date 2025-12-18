@@ -134,14 +134,16 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
   }
   // Evaluate output links
   auto output_link = ite.ptr->getOutputLink();
-  if (output_link != nullptr) {
-    assert(output_link->isTerminalNode());
-    auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, output_link);
-    assert(ART::N::isLeaf(leaf));
-    auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
-    for (auto &pattern_idx : pattern_[keyword_id]) {
-      result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
+  while (output_link != nullptr) {
+    if (output_link->isTerminalNode()) {
+      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, output_link);
+      assert(ART::N::isLeaf(leaf));
+      auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
+      for (auto &pattern_idx : pattern_[keyword_id]) {
+        result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
+      }
     }
+    output_link = output_link->getSuffixLink();  // follow the suffix-link chain
   }
 
   // Advance next offset in the text for next processing

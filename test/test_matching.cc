@@ -8,6 +8,8 @@
 #include <deque>
 #include <queue>
 #include <ranges>
+#include <string>
+#include <utility>
 #include <vector>
 
 bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
@@ -99,7 +101,6 @@ bool GreedyMatching(const char *s, size_t slen, const char *p, size_t plen) {
 
 bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen) {
   // Aho-Corasick env
-  // fmt::println("==========Test pattern '{}'==========", p);
   auto trie = aho_corasick::AhoCorasick();
   auto t    = trie.Local();
 
@@ -107,7 +108,6 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
   auto skeleton = aho_corasick::Skeleton(p, plen, [&](aho_corasick::Token &tok) {
     auto literal = std::string(p + tok.start, tok.len) + '\0';
     trie.Insert(literal.data(), literal.size(), {0, tok.start, tok.len}, t);
-    // fmt::println("Insert literal '{}' into Aho-Corasick", literal);
   });
   if (skeleton.IsEmpty() || skeleton.OnlyWildcard()) {
     return aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, p, plen);
@@ -127,49 +127,67 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
       // TODO: We should only skip on a pattern basis, i.e., must check for pattern ID in the ac_matcher part below
       //  Focus on the comparison: match.text_start_pos >= instance.min_text_start_pos
       if (sket.Contain(match.pattern_index.start_pos) && match.text_start_pos >= instance.min_text_start_pos) {
-        auto success = false;
-        // Check if start a new matching instance
-        if (sket.IsFirstLiteral(match.pattern_index.start_pos)) {
-          if (sket.has_prefix_percent) {
-            // With prefix percentage, the new 1st literal can start anywhere
-            instance.match.emplace(match.text_start_pos - match.pattern_index.start_pos, match.pattern_index.start_pos);
-            success = true;
-          } else {
-            // Without prefix percentage, the new 1st literal must start exactly at the sket's first pos
-            // This scenario only happens for the 1st literal and the literal is the prefix of the text & pattern
-            assert(instance.segment_idx == 0);
-            if (match.text_start_pos == match.pattern_index.start_pos) {
-              instance.match.emplace(match.text_start_pos - match.pattern_index.start_pos,
-                                     match.pattern_index.start_pos);
-              success = true;
-            }
-          }
-        } else {
-          // Otherwise, check if there is a previous literal that has the exact gap we are looking for
-          auto diff = match.text_start_pos - match.pattern_index.start_pos;
-          if (instance.match.contains(diff)) {
-            auto prev_pat_pos  = instance.match[diff];
-            auto prev_text_idx = prev_pat_pos + diff;
-            assert(match.text_start_pos >= prev_text_idx);
-            if (sket.IsPreviousLiteral(prev_pat_pos, match.pattern_index.start_pos) &&
-                match.text_start_pos - prev_text_idx == match.pattern_index.start_pos - prev_pat_pos) {
-              instance.match[diff] = match.pattern_index.start_pos;
-              success              = true;
-            }
-          }
-        }
+        auto success = skeleton.TryMatching(match, instance);
+
         // Now, check if we just insert the last match of the sket
-        if (success && match.pattern_index.start_pos == sket.last_literal_start_pos &&
+        if (success && sket.IsLastLiteral(match.pattern_index.start_pos) &&
             skeleton.SatisfyMatcher(match, instance, slen)) {
-          instance.segment_idx++;
-          instance.min_text_start_pos = end_offset + sket.suffix_underscore_cnt + 1;
-          instance.match.clear();
+          instance.AdvanceNextSegment(end_offset + sket.suffix_underscore_cnt + 1);
           if (instance.segment_idx >= skeleton.Size()) { return true; }
         }
       }
     }
   }
   return false;
+}
+
+auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::string> patterns) -> std::vector<bool> {
+  // Aho-Corasick env
+  auto trie = aho_corasick::AhoCorasick();
+  auto t    = trie.Local();
+  std::vector<bool> result(patterns.size(), false);
+
+  // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
+  std::vector<aho_corasick::Skeleton> skeleton;
+  for (auto idx = 0UL; idx < patterns.size(); idx++) {
+    auto &pat = patterns[idx];
+    skeleton.emplace_back(pat.c_str(), pat.size(), [&](aho_corasick::Token &tok) {
+      auto literal = std::string(pat.c_str() + tok.start, tok.len) + '\0';
+      trie.Insert(literal.data(), literal.size(), {idx, tok.start, tok.len}, t);
+    });
+    if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
+      result[idx] = aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, pat.c_str(), pat.size());
+    }
+  }
+
+  // Building suffix & output links
+  trie.BuildSuffixLink(1);
+
+  // Start matching text
+  std::vector<aho_corasick::Skeleton::Matcher> instance(patterns.size());
+  auto iterate = trie.StartIterativeParseText(s, slen);
+  for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
+    auto ac_matchers = trie.ContinueParseText(iterate);
+    for (auto &match : ac_matchers) {
+      auto pat_id   = match.pattern_index.pattern_id;
+      auto &sket    = skeleton[pat_id];
+      auto &matcher = instance[pat_id];
+      // Must match within the current considerate pattern
+      if (matcher.segment_idx < sket.Size() && sket[matcher.segment_idx].Contain(match.pattern_index.start_pos) &&
+          match.text_start_pos >= instance[pat_id].min_text_start_pos) {
+        auto success = sket.TryMatching(match, matcher);
+
+        // Now, check if we just insert the last match of the sket
+        if (success && sket[matcher.segment_idx].IsLastLiteral(match.pattern_index.start_pos) &&
+            sket.SatisfyMatcher(match, matcher, slen)) {
+          matcher.AdvanceNextSegment(end_offset + sket[matcher.segment_idx].suffix_underscore_cnt + 1);
+          if (matcher.segment_idx >= sket.Size()) { result[pat_id] = true; }
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 TEST(TestMatching, All) {
@@ -334,6 +352,18 @@ TEST(TestMatching, All) {
       std::cout << "AhoCorasick: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
     }
     EXPECT_EQ(try_pat, result);
+  }
+
+  // Transform the tests into two vector for multi-pattern matching
+  std::vector<std::string> patterns;
+  std::transform(tests.begin(), tests.end(), std::back_inserter(patterns), [](const auto &p) { return p.first; });
+  auto results = AhoCorasickMultiplePatterns(text.c_str(), text.size(), patterns);
+  for (auto idx = 0UL; idx < tests.size(); idx++) {
+    auto &[pat, result] = tests[idx];
+    if (results[idx] != result) {
+      std::cout << "AhoCorasick Multi matching: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
+    }
+    EXPECT_EQ(results[idx], result);
   }
 }
 

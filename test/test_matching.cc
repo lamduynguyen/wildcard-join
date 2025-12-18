@@ -97,14 +97,6 @@ bool GreedyMatching(const char *s, size_t slen, const char *p, size_t plen) {
   return p_idx == plen;
 }
 
-struct ActiveMatch {
-  u64 min_text_start_pos = 0;  // The min starting offset in text that we can continue matching for skeleton segment idx
-  u64 segment_idx        = 0;  // The idx of the skeleton segment
-  std::unordered_map<u64, u64> match;  // A mapping of {text_cur - pat_cur => pat_cur}
-  // Within a skeleton segment, the diff between text cursor and pattern cursor always
-  //  remain static for a possible matcher
-};
-
 bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen) {
   // Aho-Corasick env
   // fmt::println("==========Test pattern '{}'==========", p);
@@ -117,7 +109,7 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
     trie.Insert(literal.data(), literal.size(), {0, tok.start, tok.len}, t);
     // fmt::println("Insert literal '{}' into Aho-Corasick", literal);
   });
-  if (skeleton.IsEmpty() || skeleton.only_wildcard) {
+  if (skeleton.IsEmpty() || skeleton.OnlyWildcard()) {
     return aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, p, plen);
   }
 
@@ -125,8 +117,8 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
   trie.BuildSuffixLink(1);
 
   // Start matching text
-  ActiveMatch instance = {};
-  auto iterate         = trie.StartIterativeParseText(s, slen);
+  aho_corasick::Skeleton::Matcher instance = {};
+  auto iterate                             = trie.StartIterativeParseText(s, slen);
   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
     auto ac_matchers = trie.ContinueParseText(iterate);
     auto &sket       = skeleton[instance.segment_idx];
@@ -166,26 +158,13 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
             }
           }
         }
-        // TODO: Handle case where we don't have a has_suffix_percent of the last literal, i.e., suffix match
         // Now, check if we just insert the last match of the sket
-        if (success && match.pattern_index.start_pos == sket.last_literal_start_pos) {
-          /**
-           * We can only advance to the next sket if one of the following conditions is satisfied:
-           * - Current sket is not the last one of the skeleton
-           * - Current sket is the last one and has a suffix aho_corasick::PERCENTAGE
-           * - Current sket is the last one, doesn't have a suffix aho_corasick::PERCENTAGE, and the AhoCorasick matcher
-           * states that the current matching is the suffix of the queried text, including suffixed underscores
-           */
-          auto next_sket_index = instance.segment_idx + 1;
-          if ((next_sket_index < skeleton.Size()) ||
-              (next_sket_index >= skeleton.Size() && skeleton.Last().has_suffix_percent) ||
-              (next_sket_index >= skeleton.Size() && !skeleton.Last().has_suffix_percent &&
-               match.text_start_pos + match.pattern_index.keyword_len + sket.suffix_underscore_cnt == slen)) {
-            instance.segment_idx++;
-            instance.min_text_start_pos = end_offset + sket.suffix_underscore_cnt + 1;
-            instance.match.clear();
-            if (instance.segment_idx >= skeleton.Size()) { return true; }
-          }
+        if (success && match.pattern_index.start_pos == sket.last_literal_start_pos &&
+            skeleton.SatisfyMatcher(match, instance, slen)) {
+          instance.segment_idx++;
+          instance.min_text_start_pos = end_offset + sket.suffix_underscore_cnt + 1;
+          instance.match.clear();
+          if (instance.segment_idx >= skeleton.Size()) { return true; }
         }
       }
     }

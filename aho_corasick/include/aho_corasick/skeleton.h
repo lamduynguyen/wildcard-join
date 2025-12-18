@@ -1,20 +1,13 @@
 #pragma once
 
 #include "aho_corasick/aho_corasick.h"
-#include "art/epoche.h"
-#include "art/tree.h"
 #include "common/flat_map.h"
 #include "common/typedef.h"
 #include "common/util.h"
 
-#include "gtest/gtest_prod.h"
-#include "tbb/concurrent_vector.h"
-
 #include <algorithm>
-#include <atomic>
 #include <functional>
 #include <memory>
-#include <unordered_set>
 #include <vector>
 
 namespace aho_corasick {
@@ -32,7 +25,8 @@ struct Token {
   static auto NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token;
 };
 
-struct Skeleton {
+class Skeleton {
+ public:
   struct Segment {
     ska::flat_hash_map<u64, u64> prev_literal_offset;  // Map from literal's start pos to that of previous literal
     u64 last_literal_start_pos;
@@ -45,21 +39,32 @@ struct Skeleton {
     auto IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) -> bool;
   };
 
-  bool only_wildcard;
-  std::vector<Segment> seg;
+  struct Matcher {
+    u64 segment_idx        = 0;  // The idx of the skeleton segment
+    u64 min_text_start_pos = 0;  // The min starting offset in text that we can continue matching for seg[segment_idx]
+    ska::flat_hash_map<u64, u64> match;  // A mapping of (text_cur - pat_cur) => pat_cur
+  };
 
   Skeleton(const char *p, size_t plen, const std::function<void(Token &)> &literal_fn);
   ~Skeleton() = default;
 
-  inline auto operator[](int idx) -> Segment & { return seg[idx]; }
+  inline auto OnlyWildcard() { return only_wildcard_; }
 
-  inline auto IsEmpty() -> bool { return seg.empty(); }
+  inline auto operator[](int idx) -> Segment & { return seg_[idx]; }
 
-  inline auto Size() { return seg.size(); }
+  inline auto IsEmpty() -> bool { return seg_.empty(); }
 
-  inline auto Last() -> Segment & { return seg.back(); }
+  inline auto Size() { return seg_.size(); }
+
+  inline auto Last() -> Segment & { return seg_.back(); }
 
   static auto SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool;
+
+  auto SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool;
+
+ private:
+  bool only_wildcard_;
+  std::vector<Segment> seg_;
 };
 
 }  // namespace aho_corasick

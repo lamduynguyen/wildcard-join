@@ -41,7 +41,7 @@ auto Skeleton::Segment::IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) -> 
   return prev_literal_offset[start_pos] == prev_start_pos;
 }
 
-Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) : only_wildcard(true) {
+Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) : only_wildcard_(true) {
   size_t last_end_pos = 0;
   while (true) {
     Segment match = {};
@@ -66,14 +66,16 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
       prev_start                   = literal.start;
       match.last_literal_start_pos = literal.start;
       literal_fn(literal);
-      only_wildcard = false;
+      only_wildcard_ = false;
     }
-    seg.emplace_back(std::move(match));
+    seg_.emplace_back(std::move(match));
   }
   // Fill in `has_suffix_percent` info for all segment
-  if (!seg.empty()) {
-    if (last_end_pos != plen) { seg.back().has_suffix_percent = true; }
-    for (int idx = seg.size() - 2; idx >= 0; idx--) { seg[idx].has_suffix_percent = seg[idx + 1].has_prefix_percent; }
+  if (!seg_.empty()) {
+    if (last_end_pos != plen) { seg_.back().has_suffix_percent = true; }
+    for (int idx = seg_.size() - 2; idx >= 0; idx--) {
+      seg_[idx].has_suffix_percent = seg_[idx + 1].has_prefix_percent;
+    }
   }
 }
 
@@ -90,6 +92,22 @@ auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen)
     }
   }
   return (slen == underscore_cnt) || (slen > underscore_cnt && has_percent);
+}
+
+/**
+ * We can only advance to the next sket, i.e., satisfy current matcher, if one of the following conditions is satisfied:
+ * - Current segment is not the last one of the skeleton
+ * - Current segment is the last one and has a suffix aho_corasick::PERCENTAGE
+ * - Current segment is the last one, doesn't have a suffix aho_corasick::PERCENTAGE, and the AhoCorasick matcher
+ *    states that the current matching is the suffix of the queried text, including suffixed underscores
+ */
+auto Skeleton::SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool {
+  const auto &segment  = seg_[matcher.segment_idx];
+  auto next_sket_index = matcher.segment_idx + 1;
+  return (
+    (next_sket_index < seg_.size()) || (next_sket_index >= seg_.size() && seg_.back().has_suffix_percent) ||
+    (next_sket_index >= seg_.size() && !seg_.back().has_suffix_percent &&
+     ac_match.text_start_pos + ac_match.pattern_index.keyword_len + segment.suffix_underscore_cnt == text_length));
 }
 
 }  // namespace aho_corasick

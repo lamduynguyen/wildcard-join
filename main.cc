@@ -18,10 +18,8 @@
 #include "join_strings.h"
 #include "perf_event.h"
 #include "roaring/roaring.hh"
-#include "third_party/bitmagic/bm.h"
 #include "third_party/succinct/elias_fano.hpp"
 
-#ifdef USE_ROARING
 using BitmapVector = roaring::Roaring;
 #define SET_BIT(bv, index) (bv).add(index)
 #define ITERATE_CHECK(bv)                                            \
@@ -32,20 +30,6 @@ using BitmapVector = roaring::Roaring;
     }                                                                \
   })
 #define GET_SIZE_IN_BYTES(bv) ((bv).getSizeInBytes())
-#else
-using BitmapVector = bm::bvector<>;
-#define SET_BIT(bv, index) ((bv).set(index))
-#define ITERATE_CHECK(bv)                                            \
-  ({                                                                 \
-    auto it = (bv).first();                                          \
-    while (it.valid()) {                                             \
-      auto &row = data[*it];                                         \
-      if (row.title.contains(joinstr)) { result.emplace_back(row); } \
-      ++it;                                                          \
-    }                                                                \
-  })
-#define GET_SIZE_IN_BYTES(bv) ((bv).size() / 8)
-#endif
 
 using InvertedIndex               = std::array<BitmapVector, 256>;
 using FingerprintType             = uint8_t;
@@ -180,6 +164,9 @@ void ProcessNonindexedRows(std::vector<Title> &data, std::vector<Title> &result,
  *      If the match is true, then proceed with substring check similarly to naive join
  * 2: Lazy inverted index join, as explained in README.md
  * 3: Aho-Corasick-based
+ *
+ * TODO: Implement a KMP variant, a SIMD-substring-search variant.
+ * Refactor this prototype to wildcard instead of substring
  */
 enum BenchmarkVariant : u8 {
   NESTED_LOOP_JOIN         = 0,  // Naive nested loop join

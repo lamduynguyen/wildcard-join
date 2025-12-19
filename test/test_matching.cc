@@ -168,11 +168,17 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
   auto iterate = trie.StartIterativeParseText(s, slen);
   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
     auto ac_matchers = trie.ContinueParseText(iterate);
+
     for (auto &match : ac_matchers) {
       auto pat_id   = match.pattern_index.pattern_id;
       auto &sket    = skeleton[pat_id];
       auto &matcher = instance[pat_id];
-      // Must match within the current considerate pattern
+
+      /**
+       * @brief Only match within the current considerate pattern. Two key conditions:
+       * - The being-matched pattern start position must be assocated with the being-matched skeleton segment
+       * - The start position in text must adhere to the positional constraint of the active skeleton matcher `instance`
+       */
       if (matcher.segment_idx < sket.Size() && sket[matcher.segment_idx].Contain(match.pattern_index.start_pos) &&
           match.text_start_pos >= instance[pat_id].min_text_start_pos) {
         auto success = sket.TryMatching(match, matcher);

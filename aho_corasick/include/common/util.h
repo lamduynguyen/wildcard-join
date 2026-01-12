@@ -48,7 +48,23 @@ void UpdateMin(std::atomic<T> &atomic_val, T value);
 auto NextUtf8Char(const std::u8string &s, std::size_t &i) -> c32;
 
 // -------------------------------------------------------------------------------------
+/* SIMD */
+auto SIMDstrstr(const char *s, size_t n, const char *needle, size_t k) -> u64;
+
+// -------------------------------------------------------------------------------------
 /* constexpr utilities */
+template <typename T>
+auto GetFirstBitSet(const T value) {
+  assert(value != 0);
+  return __builtin_ctz(value);
+}
+
+template <typename T>
+auto ClearLeftmostSet(const T value) {
+  assert(value != 0);
+  return value & (value - 1);
+}
+
 template <typename Container>
 constexpr auto Percentile(Container &v, double percent) {
   if (v.empty()) { return 0UL; }

@@ -162,10 +162,10 @@ void ProcessNonindexedRows(std::vector<Title> &data, std::vector<Title> &result,
  * 1: Fingerprint join: scan every row, check if row.fp match join substring'fp.
  *      If the match is true, then proceed with substring check similarly to naive join
  * 2: Lazy inverted index join, as explained in README.md
- * 3: Aho-Corasick-based
+ * 3(Main variant): Aho-Corasick-based
+ * 4 -> 7: KMP and SIMD variants
  *
  * TODO:
- * - Implement a KMP variant, a SIMD-substring-search variant.
  * - Refactor this prototype to wildcard instead of substring
  */
 enum BenchmarkVariant : u8 {
@@ -174,9 +174,9 @@ enum BenchmarkVariant : u8 {
   INVERTED_INDEX_FP        = 2,  // Bitmap-based inverted index approach, using 1B fingerprint per trigram
   AHO_CORASICK             = 3,  // MAIN: Aho-Corasick-based idea
   KMP                      = 4,  // Knuth-Morris-Pratt: Similar to Aho-Corasick, but with per-string KMP
-  KMP_WITH_FP              = 5,  // TODO
-  SIMD                     = 6,  // TODO
-  SIMD_WITH_FP             = 7,  // TODO
+  KMP_WITH_FP              = 5,  // KMP with 1B fingerprint as a cheap filter before actual join
+  SIMD                     = 6,  // SIMD-optimized substring search
+  SIMD_WITH_FP             = 7,  // Same as above, plus 1B fingerprint filter before join
 };
 
 int main() {
@@ -270,10 +270,26 @@ int main() {
         case BenchmarkVariant::KMP_WITH_FP: {
           auto kmp = aho_corasick::KMPAlgorithm(joinstr);
           for (auto &row : data) {
-            if ((row.fp & substring_fp) == substring_fp) {
-              if (kmp.Match(joinstr, row.title) != aho_corasick::KMPAlgorithm::INVALID_POS) {
-                result.emplace_back(row);
-              }
+            if (((row.fp & substring_fp) == substring_fp) &&
+                (kmp.Match(joinstr, row.title) != aho_corasick::KMPAlgorithm::INVALID_POS)) {
+              result.emplace_back(row);
+            }
+          }
+        } break;
+        case BenchmarkVariant::SIMD: {
+          for (auto &row : data) {
+            if (aho_corasick::SIMDstrstr(row.title.c_str(), row.title.size(), joinstr.data(), joinstr.size()) !=
+                std::string::npos) {
+              result.emplace_back(row);
+            }
+          }
+        } break;
+        case BenchmarkVariant::SIMD_WITH_FP: {
+          for (auto &row : data) {
+            if (((row.fp & substring_fp) == substring_fp) &&
+                aho_corasick::SIMDstrstr(row.title.c_str(), row.title.size(), joinstr.data(), joinstr.size()) !=
+                  std::string::npos) {
+              result.emplace_back(row);
             }
           }
         } break;

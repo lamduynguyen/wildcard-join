@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
-#include <numeric>
 #include <string>
 #include <vector>
 
@@ -14,7 +13,7 @@ namespace aho_corasick {
 
 class KMPAlgorithm {
  public:
-  static constexpr u64 INVALID_POS = std::numeric_limits<u64>::max();
+  static constexpr u64 INVALID_POS = std::string::npos;
 
   // Pre-process the LPS (longest prefix suffix, i.e., longest prefix that is also suffix) table
   KMPAlgorithm(const std::string_view &pattern) {

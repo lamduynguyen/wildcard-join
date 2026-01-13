@@ -6,9 +6,9 @@
 #include <cstring>
 #include <memory>
 
-using KeyLen = uint32_t;
+using KeyLen                             = uint32_t;
+static constexpr uint8_t NULL_TERMINATOR = '\0';
 
-// TODO: Is this trivial to support UTF-8 encoding here?
 class Key {
  public:
   static constexpr uint32_t stackLen = 128;
@@ -30,7 +30,7 @@ class Key {
   Key(const Key &key) = delete;
   Key(Key &&key);
 
-  void set(const char bytes[], const std::size_t length);
+  void set(const char bytes[], std::size_t length);
 
   bool operator==(const Key &k) const {
     if (k.getKeyLen() != getKeyLen()) { return false; }
@@ -40,7 +40,6 @@ class Key {
   uint8_t &operator[](std::size_t i);
   const uint8_t &operator[](std::size_t i) const;
   KeyLen getKeyLen() const;
-  void setKeyLen(KeyLen len);
 };
 
 inline uint8_t &Key::operator[](std::size_t i) {
@@ -73,8 +72,12 @@ inline Key::Key(Key &&key) {
   }
 }
 
-inline void Key::set(const char bytes[], const std::size_t length) {
+// All keys must end with null terminator
+inline void Key::set(const char bytes[], std::size_t length) {
   if (len > stackLen) { delete[] data; }
+  assert(length > 0);
+  auto mustAppendTerminatedNull = bytes[length - 1] != NULL_TERMINATOR;
+  length += static_cast<size_t>(mustAppendTerminatedNull);
   if (length <= stackLen) {
     memcpy(stackKey, bytes, length);
     data = stackKey;
@@ -82,18 +85,8 @@ inline void Key::set(const char bytes[], const std::size_t length) {
     data = new uint8_t[length];
     memcpy(data, bytes, length);
   }
+  if (mustAppendTerminatedNull) { data[length - 1] = NULL_TERMINATOR; }
   len = length;
-}
-
-inline void Key::setKeyLen(KeyLen newLen) {
-  if (len == newLen) return;
-  if (len > stackLen) { delete[] data; }
-  len = newLen;
-  if (len > stackLen) {
-    data = new uint8_t[len];
-  } else {
-    data = stackKey;
-  }
 }
 
 #endif  // ART_KEY_H

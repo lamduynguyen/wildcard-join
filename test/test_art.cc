@@ -4,8 +4,7 @@
 #include "gtest/gtest.h"
 
 TEST(TestArt, InsertAndQuery) {
-  auto dataset = std::vector<std::string>{"abcdef", "xxxx", "aba", "ab"};
-  for (auto &key : dataset) { key += '\0'; }
+  auto dataset   = std::vector<std::string>{"abcdef", "xxxx", "aba", "ab"};
   auto load_key  = [&](TupleID tid, Key &key) { key.set(dataset[tid].c_str(), dataset[tid].size()); };
   auto check_key = [&](const TupleID tid, const Key &k) {
     Key cmp_key;
@@ -35,7 +34,6 @@ TEST(TestArt, InsertAndQuery) {
   // Wrong search
   auto false_keywords = std::vector<std::string>{"abc", "xxx"};
   for (auto &keyword : false_keywords) {
-    keyword += '\0';
     key.set(keyword.c_str(), keyword.size());
     auto leaf = trie.lookup(key, t);
     ASSERT_EQ(leaf, nullptr);

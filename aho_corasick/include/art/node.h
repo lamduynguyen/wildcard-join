@@ -25,7 +25,6 @@ namespace ART {
 class Tree;
 struct Leaf;
 
-static constexpr uint8_t NULL_TERMINATOR = '\0';
 enum class NTypes : uint8_t { N4 = 0, N16 = 1, N48 = 2, N256 = 3 };
 
 class N {

@@ -14,8 +14,6 @@ auto AhoCorasick::GetRoot() -> ART::N * { return trie_->root; }
 
 void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, const PatternIndexType &keyword_aux_index,
                          ART::ThreadInfo &t) {
-  assert(keyword_size > 0);                                   // Never accept null key
-  assert(keyword[keyword_size - 1] == ART::NULL_TERMINATOR);  // All keywords/patterns must end with null terminator
   Key key;
   key.set(keyword, keyword_size);
   auto new_tid = [&]() {
@@ -58,7 +56,7 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
       const auto key = std::get<0>(children[i]);
       const auto n   = std::get<1>(children[i]);
 
-      if (key != ART::NULL_TERMINATOR) {
+      if (key != NULL_TERMINATOR) {
         auto suffix_node = node->getSuffixLink();
         do {
           auto possible_suffix = ART::N::getChild(key, suffix_node);
@@ -124,7 +122,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
     ite.ptr = possible_next;
     if (ite.ptr->isTerminalNode()) {
       // case #2: matching for 2nd case
-      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, possible_next);
+      auto leaf = ART::N::getChild(NULL_TERMINATOR, possible_next);
       assert(ART::N::isLeaf(leaf));
       auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
       for (auto &pattern_idx : pattern_[keyword_id]) {
@@ -136,7 +134,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
   auto output_link = ite.ptr->getOutputLink();
   while (output_link != nullptr) {
     if (output_link->isTerminalNode()) {
-      auto leaf = ART::N::getChild(ART::NULL_TERMINATOR, output_link);
+      auto leaf = ART::N::getChild(NULL_TERMINATOR, output_link);
       assert(ART::N::isLeaf(leaf));
       auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
       for (auto &pattern_idx : pattern_[keyword_id]) {

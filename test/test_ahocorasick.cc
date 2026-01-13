@@ -7,14 +7,13 @@ namespace aho_corasick {
 
 TEST(TestAhoCorasick, SuffixLink) {
   auto dataset = std::vector<std::string>{"he", "she", "his", "hers", "herself", "hero", "sheep", "eep"};
-  for (auto &key : dataset) { key += '\0'; }
-  auto trie = aho_corasick::AhoCorasick();
+  auto trie    = aho_corasick::AhoCorasick();
 
   // Insert dataset
   Key key;
   auto t   = trie.Local();
   auto idx = 0UL;
-  for (auto &keyword : dataset) { trie.Insert(keyword.data(), keyword.size(), {idx++, 0, keyword.size() - 1}, t); }
+  for (auto &keyword : dataset) { trie.Insert(keyword.data(), keyword.size(), {idx++, 0, keyword.size()}, t); }
 
   // Building suffix & output links
   trie.BuildSuffixLink(1);
@@ -91,15 +90,14 @@ TEST(TestAhoCorasick, SuffixLink) {
   EXPECT_EQ(p->getOutputLink(), eep_terminal);
 
   // ---- Terminal nodes ----
-  for (const auto &pat_full : dataset) {
-    const auto pat = pat_full.substr(0, pat_full.size() - 1);
-    ART::N *cur    = root;
+  for (const auto &pat : dataset) {
+    auto cur = root;
     for (char c : pat) {
       cur = ART::N::getChild((uint8_t)c, cur);
       ASSERT_NE(cur, nullptr);
     }
     EXPECT_TRUE(cur->isTerminalNode());
-    EXPECT_TRUE(ART::N::isLeaf(ART::N::getChild(ART::NULL_TERMINATOR, cur)));
+    EXPECT_TRUE(ART::N::isLeaf(ART::N::getChild(NULL_TERMINATOR, cur)));
   }
 }
 

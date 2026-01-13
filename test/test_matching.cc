@@ -105,10 +105,8 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
   auto t    = trie.Local();
 
   // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
-  auto skeleton = aho_corasick::Skeleton(p, plen, [&](aho_corasick::Token &tok) {
-    auto literal = std::string(p + tok.start, tok.len) + '\0';
-    trie.Insert(literal.data(), literal.size(), {0, tok.start, tok.len}, t);
-  });
+  auto skeleton = aho_corasick::Skeleton(
+    p, plen, [&](aho_corasick::Token &tok) { trie.Insert(p + tok.start, tok.len, {0, tok.start, tok.len}, t); });
   if (skeleton.IsEmpty() || skeleton.OnlyWildcard()) {
     return aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, p, plen);
   }
@@ -152,8 +150,7 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
   for (auto idx = 0UL; idx < patterns.size(); idx++) {
     auto &pat = patterns[idx];
     skeleton.emplace_back(pat.c_str(), pat.size(), [&](aho_corasick::Token &tok) {
-      auto literal = std::string(pat.c_str() + tok.start, tok.len) + '\0';
-      trie.Insert(literal.data(), literal.size(), {idx, tok.start, tok.len}, t);
+      trie.Insert(pat.c_str() + tok.start, tok.len, {idx, tok.start, tok.len}, t);
     });
     if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
       result[idx] = aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, pat.c_str(), pat.size());
@@ -187,7 +184,6 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
           // TODO: possibly maintain a per-pattern ordered map that contains
           //   the expected text offset to the next literal per pattern id
           // Based on this mapping, we can eagerly garbage collect the matching info based on `end_offset`
-
 
           // Now, check if we just insert the last match of the sket
           if (sket[matcher.segment_idx].IsLastLiteral(match.pattern_index.start_pos) &&

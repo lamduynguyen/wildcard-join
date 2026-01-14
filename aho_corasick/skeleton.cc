@@ -1,5 +1,6 @@
 #include "aho_corasick/skeleton.h"
 
+#include "common/rand.h"
 #include "fmt/format.h"
 
 namespace aho_corasick {
@@ -31,27 +32,33 @@ auto Token::NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token {
 };
 
 // --------------------------------------------------------------------------------------------
-void Skeleton::Segment::Insert(u64 start_pos) {
+void Skeleton::Segment::Insert(pat_off_t start_pos) {
   literal_offset.emplace_back(start_pos);
   lit_off_p.emplace(start_pos, literal_offset.size() - 1);
 }
 
-auto Skeleton::Segment::Contain(u64 start_pos) const -> bool { return lit_off_p.contains(start_pos); }
+auto Skeleton::Segment::Contain(pat_off_t start_pos) const -> bool { return lit_off_p.contains(start_pos); }
 
-auto Skeleton::Segment::IsFirstLiteral(u64 start_pos) const -> bool {
+auto Skeleton::Segment::IsFirstLiteral(pat_off_t start_pos) const -> bool {
   assert(Contain(start_pos));
   return lit_off_p.at(start_pos) == 0;
 }
 
-auto Skeleton::Segment::IsLastLiteral(u64 start_pos) const -> bool {
+auto Skeleton::Segment::IsLastLiteral(pat_off_t start_pos) const -> bool {
   assert(Contain(start_pos));
   return lit_off_p.at(start_pos) == literal_offset.size() - 1;
 }
 
-auto Skeleton::Segment::IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) const -> bool {
+auto Skeleton::Segment::IsPreviousLiteral(pat_off_t prev_start_pos, pat_off_t start_pos) const -> bool {
   assert(Contain(start_pos));
   auto pos = lit_off_p.at(start_pos);
   return (pos > 0) && (literal_offset[pos - 1] == prev_start_pos);
+}
+
+auto Skeleton::Segment::GetNextLiteralOffset(pat_off_t start_pos) -> pat_off_t {
+  assert(!IsLastLiteral(start_pos));
+  auto pos = lit_off_p.at(start_pos);
+  return literal_offset[pos + 1];
 }
 
 // --------------------------------------------------------------------------------------------
@@ -111,12 +118,12 @@ auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen)
  * - The start position in text must adhere to the positional constraint of the active skeleton matcher `instance`
  */
 auto Skeleton::MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) -> bool {
-  return matcher.segment_idx < seg_.size() && seg_[matcher.segment_idx].Contain(ac_match.pattern_index.start_pos) &&
-         ac_match.text_start_pos >= matcher.min_text_start_pos;
+  return matcher.segment_idx_ < seg_.size() && seg_[matcher.segment_idx_].Contain(ac_match.pattern_index.start_pos) &&
+         ac_match.text_start_pos >= matcher.min_text_start_pos_;
 }
 
 auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher) -> bool {
-  const auto &segment = seg_[matcher.segment_idx];
+  const auto &segment = seg_[matcher.segment_idx_];
   const auto diff     = ac_match.text_start_pos - ac_match.pattern_index.start_pos;
 
   if (segment.IsFirstLiteral(ac_match.pattern_index.start_pos)) {
@@ -127,7 +134,7 @@ auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher)
      *   Also, this scenario only happens for the 1st literal and the literal is the prefix of the text & pattern
      */
     if (segment.has_prefix_percent ||
-        (matcher.segment_idx == 0 && ac_match.text_start_pos == ac_match.pattern_index.start_pos)) {
+        (matcher.segment_idx_ == 0 && ac_match.text_start_pos == ac_match.pattern_index.start_pos)) {
       matcher.Insert(diff, ac_match.pattern_index.start_pos);
       return true;
     }
@@ -154,12 +161,25 @@ auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher)
  *    states that the current matching is the suffix of the queried text, including suffixed underscores
  */
 auto Skeleton::SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool {
-  const auto &segment  = seg_[matcher.segment_idx];
-  auto next_sket_index = matcher.segment_idx + 1;
+  const auto &segment  = seg_[matcher.segment_idx_];
+  auto next_sket_index = matcher.segment_idx_ + 1;
   return (
     (next_sket_index < seg_.size()) || (next_sket_index >= seg_.size() && seg_.back().has_suffix_percent) ||
     (next_sket_index >= seg_.size() && !seg_.back().has_suffix_percent &&
      ac_match.text_start_pos + ac_match.pattern_index.keyword_len + segment.suffix_underscore_cnt == text_length));
+}
+
+void Skeleton::TryGarbageCollection(u64 current_text_offset, Matcher &matcher) {
+  if (matcher.NumberOfPartialMatches() >= PARTIAL_MATCH_GC_THRESHOLD && RandomGenerator::GetRandU64() % 100 == 0) {
+    std::erase_if(matcher.match_, [&](const auto &item) {
+      const auto &seg_idx                     = matcher.segment_idx_;
+      const auto &[diff, pat_index_start_pos] = item;
+      assert(!seg_[seg_idx].IsLastLiteral(pat_index_start_pos));
+
+      auto next_literal_offset = seg_[seg_idx].GetNextLiteralOffset(pat_index_start_pos);
+      return next_literal_offset + diff < current_text_offset;
+    });
+  }
 }
 
 }  // namespace aho_corasick

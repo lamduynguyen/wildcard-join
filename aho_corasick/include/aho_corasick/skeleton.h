@@ -28,28 +28,37 @@ struct Token {
 // Per-pattern Skeleton
 class Skeleton {
  public:
-  using pat_off_t                              = u16;
-  static constexpr auto INVALID_PATTERN_OFFSET = std::numeric_limits<pat_off_t>::max();
+  using pat_off_t                                  = u16;
+  static constexpr auto INVALID_PATTERN_OFFSET     = std::numeric_limits<pat_off_t>::max();
+  static constexpr auto PARTIAL_MATCH_GC_THRESHOLD = 16;
 
   /**
    * @brief Matcher implements the matching logic, i.e., whether the text matches the wildcard pattern.
    */
-  struct Matcher {
-    u64 segment_idx        = 0;  // The idx of the skeleton segment
-    u64 min_text_start_pos = 0;  // The min starting offset in text that we can continue matching for seg[segment_idx]
-    ska::flat_hash_map<u64, u64> match;  // A mapping of (text_cur - pat_cur) => pat_cur
-
+  class Matcher {
+   public:
     inline auto AdvanceNextSegment(u64 min_text_next_start_pos) {
-      segment_idx++;
-      min_text_start_pos = min_text_next_start_pos;
-      match.clear();
+      segment_idx_++;
+      min_text_start_pos_ = min_text_next_start_pos;
+      match_.clear();
     }
 
-    inline auto Contain(u64 text_pat_diff) const { return match.contains(text_pat_diff); }
+    inline auto CurrentSegmentIdx() { return segment_idx_; }
 
-    inline auto Insert(u64 text_pat_diff, u64 pat_cursor) { match.emplace(text_pat_diff, pat_cursor); }
+    inline auto Contain(u64 text_pat_diff) const { return match_.contains(text_pat_diff); }
 
-    inline auto operator[](u64 text_pat_diff) -> u64 & { return match[text_pat_diff]; }
+    inline auto Insert(u64 text_pat_diff, u64 pat_cursor) { match_.emplace(text_pat_diff, pat_cursor); }
+
+    inline auto operator[](u64 text_pat_diff) -> pat_off_t & { return match_[text_pat_diff]; }
+
+    inline auto NumberOfPartialMatches() { return match_.size(); }
+
+   private:
+    friend class Skeleton;
+
+    u64 segment_idx_        = 0;  // The idx of the skeleton segment
+    u64 min_text_start_pos_ = 0;  // The min starting offset in text that we can continue matching for seg[segment_idx]
+    ankerl::unordered_dense::map<u64, pat_off_t> match_;  // A mapping of (text_cur - pat_cur) => pat_cur
   };
 
   /**
@@ -68,16 +77,17 @@ class Skeleton {
    */
   struct Segment {
     std::vector<pat_off_t> literal_offset;
-    ska::flat_hash_map<pat_off_t, pat_off_t> lit_off_p;  // pos of an `offset` value within the above vector
+    ankerl::unordered_dense::map<pat_off_t, pat_off_t> lit_off_p;  // pos of an `offset` value within the above vector
     u64 suffix_underscore_cnt;
     bool has_prefix_percent;
     bool has_suffix_percent;
 
-    void Insert(u64 start_pos);
-    auto Contain(u64 start_pos) const -> bool;
-    auto IsFirstLiteral(u64 start_pos) const -> bool;
-    auto IsLastLiteral(u64 start_pos) const -> bool;
-    auto IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) const -> bool;
+    void Insert(pat_off_t start_pos);
+    auto Contain(pat_off_t start_pos) const -> bool;
+    auto IsFirstLiteral(pat_off_t start_pos) const -> bool;
+    auto IsLastLiteral(pat_off_t start_pos) const -> bool;
+    auto IsPreviousLiteral(pat_off_t prev_start_pos, pat_off_t start_pos) const -> bool;
+    auto GetNextLiteralOffset(pat_off_t start_pos) -> pat_off_t;
   };
 
   Skeleton(const char *p, size_t plen, const std::function<void(Token &)> &literal_fn);
@@ -96,9 +106,11 @@ class Skeleton {
 
   static auto SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool;
 
+  /* Matching utilities */
   auto MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
   auto TryMatching(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
   auto SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool;
+  void TryGarbageCollection(u64 current_text_offset, Matcher &matcher);
 
  private:
   bool only_wildcard_;

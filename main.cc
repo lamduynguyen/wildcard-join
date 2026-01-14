@@ -11,10 +11,10 @@
 #include <vector>
 
 #include "aho_corasick/aho_corasick.h"
-#include "common/csv.h"
 #include "common/perf_event.h"
 #include "kmp/kmp.h"
 
+#include "csv.h"
 #include "fmt/format.h"
 #include "join_strings.h"
 #include "roaring/roaring.hh"

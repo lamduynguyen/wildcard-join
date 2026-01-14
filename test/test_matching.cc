@@ -119,18 +119,18 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
   auto iterate                             = trie.StartIterativeParseText(s, slen);
   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
     auto ac_matchers = trie.ContinueParseText(iterate);
-    auto &sket       = skeleton[instance.segment_idx];
+    auto &sket       = skeleton[instance.CurrentSegmentIdx()];
     for (auto &match : ac_matchers) {
       // Must match within the current considerate pattern
       // Focus on the comparison: match.text_start_pos >= instance.min_text_start_pos
-      if (sket.Contain(match.pattern_index.start_pos) && match.text_start_pos >= instance.min_text_start_pos) {
+      if (skeleton.MayMatch(match, instance)) {
         auto success = skeleton.TryMatching(match, instance);
 
         // Now, check if we just insert the last match of the sket
         if (success && sket.IsLastLiteral(match.pattern_index.start_pos) &&
             skeleton.SatisfyMatcher(match, instance, slen)) {
           instance.AdvanceNextSegment(end_offset + sket.suffix_underscore_cnt + 1);
-          if (instance.segment_idx >= skeleton.Size()) { return true; }
+          if (instance.CurrentSegmentIdx() >= skeleton.Size()) { return true; }
         }
       }
     }
@@ -174,18 +174,16 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
         auto success = sket.TryMatching(match, matcher);
 
         if (success) {
-          // TODO: possibly maintain a per-pattern ordered map that contains
-          //   the expected text offset to the next literal per pattern id
-          // Based on this mapping, we can eagerly garbage collect the matching info based on `end_offset`
-
           // Now, check if we just insert the last match of the sket
-          if (sket[matcher.segment_idx].IsLastLiteral(match.pattern_index.start_pos) &&
+          if (sket[matcher.CurrentSegmentIdx()].IsLastLiteral(match.pattern_index.start_pos) &&
               sket.SatisfyMatcher(match, matcher, slen)) {
-            matcher.AdvanceNextSegment(end_offset + sket[matcher.segment_idx].suffix_underscore_cnt + 1);
-            if (matcher.segment_idx >= sket.Size()) { result[pat_id] = true; }
+            matcher.AdvanceNextSegment(end_offset + sket[matcher.CurrentSegmentIdx()].suffix_underscore_cnt + 1);
+            if (matcher.CurrentSegmentIdx() >= sket.Size()) { result[pat_id] = true; }
           }
         }
       }
+
+      sket.TryGarbageCollection(end_offset, matcher);
     }
   }
 

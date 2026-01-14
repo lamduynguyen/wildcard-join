@@ -1,1678 +1,2019 @@
-//          Copyright Malte Skarupke 2017.
-// Distributed under the Boost Software License, Version 1.0.
-//    (See http://www.boost.org/LICENSE_1_0.txt)
+///////////////////////// ankerl::unordered_dense::{map, set} /////////////////////////
 
-// Stolen from https://github.com/skarupke/flat_hash_map
+// A fast & densely stored hashmap and hashset based on robin-hood backward shift deletion.
+// Version 4.8.1
+// https://github.com/martinus/unordered_dense
+//
+// Licensed under the MIT License <http://opensource.org/licenses/MIT>.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2022 Martin Leitner-Ankerl <martin.ankerl@gmail.com>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 
-#pragma once
+#ifndef ANKERL_UNORDERED_DENSE_H
+#define ANKERL_UNORDERED_DENSE_H
 
-#include <algorithm>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <iterator>
-#include <type_traits>
-#include <utility>
+// see https://semver.org/spec/v2.0.0.html
+#define ANKERL_UNORDERED_DENSE_VERSION_MAJOR 4  // NOLINT(cppcoreguidelines-macro-usage) incompatible API changes
+#define ANKERL_UNORDERED_DENSE_VERSION_MINOR \
+  8  // NOLINT(cppcoreguidelines-macro-usage) backwards compatible functionality
+#define ANKERL_UNORDERED_DENSE_VERSION_PATCH 1  // NOLINT(cppcoreguidelines-macro-usage) backwards compatible bug fixes
 
-#ifdef _MSC_VER
-#define SKA_NOINLINE(...) __declspec(noinline) __VA_ARGS__
+// API versioning with inline namespace, see https://www.foonathan.net/2018/11/inline-namespaces/
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_VERSION_CONCAT1(major, minor, patch) v##major##_##minor##_##patch
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_VERSION_CONCAT(major, minor, patch) \
+  ANKERL_UNORDERED_DENSE_VERSION_CONCAT1(major, minor, patch)
+#define ANKERL_UNORDERED_DENSE_NAMESPACE                                                                            \
+  ANKERL_UNORDERED_DENSE_VERSION_CONCAT(ANKERL_UNORDERED_DENSE_VERSION_MAJOR, ANKERL_UNORDERED_DENSE_VERSION_MINOR, \
+                                        ANKERL_UNORDERED_DENSE_VERSION_PATCH)
+
+#if defined(_MSVC_LANG)
+#define ANKERL_UNORDERED_DENSE_CPP_VERSION _MSVC_LANG
 #else
-#define SKA_NOINLINE(...) __VA_ARGS__ __attribute__((noinline))
+#define ANKERL_UNORDERED_DENSE_CPP_VERSION __cplusplus
 #endif
 
-namespace ska {
-struct prime_number_hash_policy;
-struct power_of_two_hash_policy;
-struct fibonacci_hash_policy;
+#if defined(__GNUC__)
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_PACK(decl) decl __attribute__((__packed__))
+#elif defined(_MSC_VER)
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_PACK(decl) __pragma(pack(push, 1)) decl __pragma(pack(pop))
+#endif
 
-namespace detailv3 {
-template <typename Result, typename Functor>
-struct functor_storage : Functor {
-  functor_storage() = default;
+// exceptions
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+#define ANKERL_UNORDERED_DENSE_HAS_EXCEPTIONS() 1  // NOLINT(cppcoreguidelines-macro-usage)
+#else
+#define ANKERL_UNORDERED_DENSE_HAS_EXCEPTIONS() 0  // NOLINT(cppcoreguidelines-macro-usage)
+#endif
+#ifdef _MSC_VER
+#define ANKERL_UNORDERED_DENSE_NOINLINE __declspec(noinline)
+#else
+#define ANKERL_UNORDERED_DENSE_NOINLINE __attribute__((noinline))
+#endif
 
-  functor_storage(const Functor &functor) : Functor(functor) {}
+#if defined(__clang__) && defined(__has_attribute)
+#if __has_attribute(__no_sanitize__)
+#define ANKERL_UNORDERED_DENSE_DISABLE_UBSAN_UNSIGNED_INTEGER_CHECK \
+  __attribute__((__no_sanitize__("unsigned-integer-overflow")))
+#endif
+#endif
 
-  template <typename... Args>
-  Result operator()(Args &&...args) {
-    return static_cast<Functor &>(*this)(std::forward<Args>(args)...);
-  }
+#if !defined(ANKERL_UNORDERED_DENSE_DISABLE_UBSAN_UNSIGNED_INTEGER_CHECK)
+#define ANKERL_UNORDERED_DENSE_DISABLE_UBSAN_UNSIGNED_INTEGER_CHECK
+#endif
 
-  template <typename... Args>
-  Result operator()(Args &&...args) const {
-    return static_cast<const Functor &>(*this)(std::forward<Args>(args)...);
-  }
-};
+#if ANKERL_UNORDERED_DENSE_CPP_VERSION < 201703L
+#error ankerl::unordered_dense requires C++17 or higher
+#else
 
-template <typename Result, typename... Args>
-struct functor_storage<Result, Result (*)(Args...)> {
-  typedef Result (*function_ptr)(Args...);
-  function_ptr function;
+#include <array>             // for array
+#include <cstdint>           // for uint64_t, uint32_t, std::uint8_t, UINT64_C
+#include <cstring>           // for size_t, memcpy, memset
+#include <functional>        // for equal_to, hash
+#include <initializer_list>  // for initializer_list
+#include <iterator>          // for pair, distance
+#include <limits>            // for numeric_limits
+#include <memory>            // for allocator, allocator_traits, shared_ptr
+#include <optional>          // for optional
+#include <stdexcept>         // for out_of_range
+#include <string>            // for basic_string
+#include <string_view>       // for basic_string_view, hash
+#include <tuple>             // for forward_as_tuple
+#include <type_traits>       // for enable_if_t, declval, conditional_t, ena...
+#include <utility>           // for forward, exchange, pair, as_const, piece...
+#include <vector>            // for vector
 
-  functor_storage(function_ptr function) : function(function) {}
+// <memory_resource> includes <mutex>, which fails to compile if
+// targeting GCC >= 13 with the (rewritten) win32 thread model, and
+// targeting Windows earlier than Vista (0x600).  GCC predefines
+// _REENTRANT when using the 'posix' model, and doesn't when using the
+// 'win32' model.
+#if defined __MINGW64__ && defined __GNUC__ && __GNUC__ >= 13 && !defined _REENTRANT
+// _WIN32_WINNT is guaranteed to be defined here because of the
+// <cstdint> inclusion above.
+#ifndef _WIN32_WINNT
+#error "_WIN32_WINNT not defined"
+#endif
+#if _WIN32_WINNT < 0x600
+#define ANKERL_MEMORY_RESOURCE_IS_BAD() 1  // NOLINT(cppcoreguidelines-macro-usage)
+#endif
+#endif
+#ifndef ANKERL_MEMORY_RESOURCE_IS_BAD
+#define ANKERL_MEMORY_RESOURCE_IS_BAD() 0  // NOLINT(cppcoreguidelines-macro-usage)
+#endif
 
-  Result operator()(Args... args) const { return function(std::forward<Args>(args)...); }
+#if defined(__has_include) && !defined(ANKERL_UNORDERED_DENSE_DISABLE_PMR)
+#if __has_include(<memory_resource>) && !ANKERL_MEMORY_RESOURCE_IS_BAD()
+#define ANKERL_UNORDERED_DENSE_PMR std::pmr  // NOLINT(cppcoreguidelines-macro-usage)
+#include <memory_resource>                   // for polymorphic_allocator
+#elif __has_include(<experimental/memory_resource>)
+#define ANKERL_UNORDERED_DENSE_PMR std::experimental::pmr  // NOLINT(cppcoreguidelines-macro-usage)
+#include <experimental/memory_resource>                    // for polymorphic_allocator
+#endif
+#endif
 
-  operator function_ptr &() { return function; }
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#pragma intrinsic(_umul128)
+#endif
 
-  operator const function_ptr &() { return function; }
-};
+#if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely) && ANKERL_UNORDERED_DENSE_CPP_VERSION >= 202002L
+#define ANKERL_UNORDERED_DENSE_LIKELY_ATTR [[likely]]      // NOLINT(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR [[unlikely]]  // NOLINT(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_LIKELY(x) (x)               // NOLINT(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_UNLIKELY(x) (x)             // NOLINT(cppcoreguidelines-macro-usage)
+#else
+#define ANKERL_UNORDERED_DENSE_LIKELY_ATTR    // NOLINT(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR  // NOLINT(cppcoreguidelines-macro-usage)
 
-template <typename key_type, typename value_type, typename hasher>
-struct KeyOrValueHasher : functor_storage<size_t, hasher> {
-  typedef functor_storage<size_t, hasher> hasher_storage;
-  KeyOrValueHasher() = default;
+#if defined(__GNUC__) || defined(__INTEL_COMPILER) || defined(__clang__)
+#define ANKERL_UNORDERED_DENSE_LIKELY(x) __builtin_expect(x, 1)    // NOLINT(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_UNLIKELY(x) __builtin_expect(x, 0)  // NOLINT(cppcoreguidelines-macro-usage)
+#else
+#define ANKERL_UNORDERED_DENSE_LIKELY(x) (x)    // NOLINT(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_UNLIKELY(x) (x)  // NOLINT(cppcoreguidelines-macro-usage)
+#endif
 
-  KeyOrValueHasher(const hasher &hash) : hasher_storage(hash) {}
+#endif
 
-  size_t operator()(const key_type &key) { return static_cast<hasher_storage &>(*this)(key); }
+namespace ankerl::unordered_dense {
+inline namespace ANKERL_UNORDERED_DENSE_NAMESPACE {
 
-  size_t operator()(const key_type &key) const { return static_cast<const hasher_storage &>(*this)(key); }
+namespace detail {
 
-  size_t operator()(const value_type &value) { return static_cast<hasher_storage &>(*this)(value.first); }
+#if ANKERL_UNORDERED_DENSE_HAS_EXCEPTIONS()
 
-  size_t operator()(const value_type &value) const { return static_cast<const hasher_storage &>(*this)(value.first); }
-
-  template <typename F, typename S>
-  size_t operator()(const std::pair<F, S> &value) {
-    return static_cast<hasher_storage &>(*this)(value.first);
-  }
-
-  template <typename F, typename S>
-  size_t operator()(const std::pair<F, S> &value) const {
-    return static_cast<const hasher_storage &>(*this)(value.first);
-  }
-};
-
-template <typename key_type, typename value_type, typename key_equal>
-struct KeyOrValueEquality : functor_storage<bool, key_equal> {
-  typedef functor_storage<bool, key_equal> equality_storage;
-  KeyOrValueEquality() = default;
-
-  KeyOrValueEquality(const key_equal &equality) : equality_storage(equality) {}
-
-  bool operator()(const key_type &lhs, const key_type &rhs) { return static_cast<equality_storage &>(*this)(lhs, rhs); }
-
-  bool operator()(const key_type &lhs, const value_type &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs, rhs.first);
-  }
-
-  bool operator()(const value_type &lhs, const key_type &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs.first, rhs);
-  }
-
-  bool operator()(const value_type &lhs, const value_type &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs.first, rhs.first);
-  }
-
-  template <typename F, typename S>
-  bool operator()(const key_type &lhs, const std::pair<F, S> &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs, rhs.first);
-  }
-
-  template <typename F, typename S>
-  bool operator()(const std::pair<F, S> &lhs, const key_type &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs.first, rhs);
-  }
-
-  template <typename F, typename S>
-  bool operator()(const value_type &lhs, const std::pair<F, S> &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs.first, rhs.first);
-  }
-
-  template <typename F, typename S>
-  bool operator()(const std::pair<F, S> &lhs, const value_type &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs.first, rhs.first);
-  }
-
-  template <typename FL, typename SL, typename FR, typename SR>
-  bool operator()(const std::pair<FL, SL> &lhs, const std::pair<FR, SR> &rhs) {
-    return static_cast<equality_storage &>(*this)(lhs.first, rhs.first);
-  }
-};
-
-static constexpr int8_t min_lookups = 4;
-
-template <typename T>
-struct sherwood_v3_entry {
-  sherwood_v3_entry() {}
-
-  sherwood_v3_entry(int8_t distance_from_desired) : distance_from_desired(distance_from_desired) {}
-
-  ~sherwood_v3_entry() {}
-
-  static sherwood_v3_entry *empty_default_table() {
-    static sherwood_v3_entry result[min_lookups] = {{}, {}, {}, {special_end_value}};
-    return result;
-  }
-
-  bool has_value() const { return distance_from_desired >= 0; }
-
-  bool is_empty() const { return distance_from_desired < 0; }
-
-  bool is_at_desired_position() const { return distance_from_desired <= 0; }
-
-  template <typename... Args>
-  void emplace(int8_t distance, Args &&...args) {
-    new (std::addressof(value)) T(std::forward<Args>(args)...);
-    distance_from_desired = distance;
-  }
-
-  void destroy_value() {
-    value.~T();
-    distance_from_desired = -1;
-  }
-
-  int8_t distance_from_desired              = -1;
-  static constexpr int8_t special_end_value = 0;
-
-  union {
-    T value;
-  };
-};
-
-inline int8_t log2(size_t value) {
-  static constexpr int8_t table[64] = {63, 0,  58, 1,  59, 47, 53, 2,  60, 39, 48, 27, 54, 33, 42, 3,
-                                       61, 51, 37, 40, 49, 18, 28, 20, 55, 30, 34, 11, 43, 14, 22, 4,
-                                       62, 57, 46, 52, 38, 26, 32, 41, 50, 36, 17, 19, 29, 10, 13, 21,
-                                       56, 45, 25, 31, 35, 16, 9,  12, 44, 24, 15, 8,  23, 7,  6,  5};
-  value |= value >> 1;
-  value |= value >> 2;
-  value |= value >> 4;
-  value |= value >> 8;
-  value |= value >> 16;
-  value |= value >> 32;
-  return table[((value - (value >> 1)) * 0x07EDD5E59A4E28C2) >> 58];
+// make sure this is not inlined as it is slow and dramatically enlarges code, thus making other
+// inlinings more difficult. Throws are also generally the slow path.
+[[noreturn]] inline ANKERL_UNORDERED_DENSE_NOINLINE void on_error_key_not_found() {
+  throw std::out_of_range("ankerl::unordered_dense::map::at(): key not found");
 }
 
-template <typename T, bool>
-struct AssignIfTrue {
-  void operator()(T &lhs, const T &rhs) { lhs = rhs; }
-
-  void operator()(T &lhs, T &&rhs) { lhs = std::move(rhs); }
-};
-
-template <typename T>
-struct AssignIfTrue<T, false> {
-  void operator()(T &, const T &) {}
-
-  void operator()(T &, T &&) {}
-};
-
-inline size_t next_power_of_two(size_t i) {
-  --i;
-  i |= i >> 1;
-  i |= i >> 2;
-  i |= i >> 4;
-  i |= i >> 8;
-  i |= i >> 16;
-  i |= i >> 32;
-  ++i;
-  return i;
+[[noreturn]] inline ANKERL_UNORDERED_DENSE_NOINLINE void on_error_bucket_overflow() {
+  throw std::overflow_error("ankerl::unordered_dense: reached max bucket size, cannot increase size");
 }
 
-template <typename...>
-using void_t = void;
+[[noreturn]] inline ANKERL_UNORDERED_DENSE_NOINLINE void on_error_too_many_elements() {
+  throw std::out_of_range("ankerl::unordered_dense::map::replace(): too many elements");
+}
 
-template <typename T, typename = void>
-struct HashPolicySelector {
-  typedef fibonacci_hash_policy type;
+#else
+
+[[noreturn]] inline void on_error_key_not_found() { abort(); }
+
+[[noreturn]] inline void on_error_bucket_overflow() { abort(); }
+
+[[noreturn]] inline void on_error_too_many_elements() { abort(); }
+
+#endif
+
+}  // namespace detail
+
+// hash ///////////////////////////////////////////////////////////////////////
+
+// This is a stripped-down implementation of wyhash: https://github.com/wangyi-fudan/wyhash
+// No big-endian support (because different values on different machines don't matter),
+// hardcodes seed and the secret, reformats the code, and clang-tidy fixes.
+namespace detail::wyhash {
+
+inline void mum(std::uint64_t *a, std::uint64_t *b) {
+#if defined(__SIZEOF_INT128__)
+  __uint128_t r = *a;
+  r *= *b;
+  *a = static_cast<std::uint64_t>(r);
+  *b = static_cast<std::uint64_t>(r >> 64U);
+#elif defined(_MSC_VER) && defined(_M_X64)
+  *a = _umul128(*a, *b, b);
+#else
+  std::uint64_t ha = *a >> 32U;
+  std::uint64_t hb = *b >> 32U;
+  std::uint64_t la = static_cast<std::uint32_t>(*a);
+  std::uint64_t lb = static_cast<std::uint32_t>(*b);
+  std::uint64_t hi{};
+  std::uint64_t lo{};
+  std::uint64_t rh  = ha * hb;
+  std::uint64_t rm0 = ha * lb;
+  std::uint64_t rm1 = hb * la;
+  std::uint64_t rl  = la * lb;
+  std::uint64_t t   = rl + (rm0 << 32U);
+  auto c            = static_cast<std::uint64_t>(t < rl);
+  lo                = t + (rm1 << 32U);
+  c += static_cast<std::uint64_t>(lo < t);
+  hi = rh + (rm0 >> 32U) + (rm1 >> 32U) + c;
+  *a = lo;
+  *b = hi;
+#endif
+}
+
+// multiply and xor mix function, aka MUM
+[[nodiscard]] inline auto mix(std::uint64_t a, std::uint64_t b) -> std::uint64_t {
+  mum(&a, &b);
+  return a ^ b;
+}
+
+// read functions. WARNING: we don't care about endianness, so results are different on big endian!
+[[nodiscard]] inline auto r8(const std::uint8_t *p) -> std::uint64_t {
+  std::uint64_t v{};
+  std::memcpy(&v, p, 8U);
+  return v;
+}
+
+[[nodiscard]] inline auto r4(const std::uint8_t *p) -> std::uint64_t {
+  std::uint32_t v{};
+  std::memcpy(&v, p, 4);
+  return v;
+}
+
+// reads 1, 2, or 3 bytes
+[[nodiscard]] inline auto r3(const std::uint8_t *p, std::size_t k) -> std::uint64_t {
+  return (static_cast<std::uint64_t>(p[0]) << 16U) | (static_cast<std::uint64_t>(p[k >> 1U]) << 8U) | p[k - 1];
+}
+
+[[maybe_unused]] [[nodiscard]] inline auto hash(void const *key, std::size_t len) -> std::uint64_t {
+  static constexpr auto secret = std::array{UINT64_C(0xa0761d6478bd642f), UINT64_C(0xe7037ed1a0b428db),
+                                            UINT64_C(0x8ebc6af09c88c6e3), UINT64_C(0x589965cc75374cc3)};
+
+  auto const *p      = static_cast<std::uint8_t const *>(key);
+  std::uint64_t seed = secret[0];
+  std::uint64_t a{};
+  std::uint64_t b{};
+  if (ANKERL_UNORDERED_DENSE_LIKELY(len <= 16)) ANKERL_UNORDERED_DENSE_LIKELY_ATTR {
+      if (ANKERL_UNORDERED_DENSE_LIKELY(len >= 4)) ANKERL_UNORDERED_DENSE_LIKELY_ATTR {
+          a = (r4(p) << 32U) | r4(p + ((len >> 3U) << 2U));
+          b = (r4(p + len - 4) << 32U) | r4(p + len - 4 - ((len >> 3U) << 2U));
+        }
+      else if (ANKERL_UNORDERED_DENSE_LIKELY(len > 0))
+        ANKERL_UNORDERED_DENSE_LIKELY_ATTR {
+          a = r3(p, len);
+          b = 0;
+        }
+      else {
+        a = 0;
+        b = 0;
+      }
+    }
+  else {
+    std::size_t i = len;
+    if (ANKERL_UNORDERED_DENSE_UNLIKELY(i > 48)) ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR {
+        std::uint64_t see1 = seed;
+        std::uint64_t see2 = seed;
+        do {
+          seed = mix(r8(p) ^ secret[1], r8(p + 8) ^ seed);
+          see1 = mix(r8(p + 16) ^ secret[2], r8(p + 24) ^ see1);
+          see2 = mix(r8(p + 32) ^ secret[3], r8(p + 40) ^ see2);
+          p += 48;
+          i -= 48;
+        } while (ANKERL_UNORDERED_DENSE_LIKELY(i > 48));
+        seed ^= see1 ^ see2;
+      }
+    while (ANKERL_UNORDERED_DENSE_UNLIKELY(i > 16)) ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR {
+        seed = mix(r8(p) ^ secret[1], r8(p + 8) ^ seed);
+        i -= 16;
+        p += 16;
+      }
+    a = r8(p + i - 16);
+    b = r8(p + i - 8);
+  }
+
+  return mix(secret[1] ^ len, mix(a ^ secret[1], b ^ seed));
+}
+
+[[nodiscard]] inline auto hash(std::uint64_t x) -> std::uint64_t {
+  return detail::wyhash::mix(x, UINT64_C(0x9E3779B97F4A7C15));
+}
+
+}  // namespace detail::wyhash
+
+template <typename T, typename Enable = void>
+struct hash {
+  auto operator()(T const &obj) const
+    noexcept(noexcept(std::declval<std::hash<T> >().operator()(std::declval<T const &>()))) -> std::uint64_t {
+    return std::hash<T>{}(obj);
+  }
 };
 
 template <typename T>
-struct HashPolicySelector<T, void_t<typename T::hash_policy>> {
-  typedef typename T::hash_policy type;
+struct hash<T, typename std::hash<T>::is_avalanching> {
+  using is_avalanching = void;
+
+  auto operator()(T const &obj) const
+    noexcept(noexcept(std::declval<std::hash<T> >().operator()(std::declval<T const &>()))) -> std::uint64_t {
+    return std::hash<T>{}(obj);
+  }
 };
 
-template <typename T, typename FindKey, typename ArgumentHash, typename Hasher, typename ArgumentEqual, typename Equal,
-          typename ArgumentAlloc, typename EntryAlloc>
-class sherwood_v3_table : private EntryAlloc, private Hasher, private Equal {
-  using Entry           = detailv3::sherwood_v3_entry<T>;
-  using AllocatorTraits = std::allocator_traits<EntryAlloc>;
-  using EntryPointer    = typename AllocatorTraits::pointer;
-  struct convertible_to_iterator;
+template <typename CharT>
+struct hash<std::basic_string<CharT> > {
+  using is_avalanching = void;
+
+  auto operator()(std::basic_string<CharT> const &str) const noexcept -> std::uint64_t {
+    return detail::wyhash::hash(str.data(), sizeof(CharT) * str.size());
+  }
+};
+
+template <typename CharT>
+struct hash<std::basic_string_view<CharT> > {
+  using is_avalanching = void;
+
+  auto operator()(std::basic_string_view<CharT> const &sv) const noexcept -> std::uint64_t {
+    return detail::wyhash::hash(sv.data(), sizeof(CharT) * sv.size());
+  }
+};
+
+template <class T>
+struct hash<T *> {
+  using is_avalanching = void;
+
+  auto operator()(T *ptr) const noexcept -> std::uint64_t {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return detail::wyhash::hash(reinterpret_cast<std::uintptr_t>(ptr));
+  }
+};
+
+template <class T>
+struct hash<std::unique_ptr<T> > {
+  using is_avalanching = void;
+
+  auto operator()(std::unique_ptr<T> const &ptr) const noexcept -> std::uint64_t {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return detail::wyhash::hash(reinterpret_cast<std::uintptr_t>(ptr.get()));
+  }
+};
+
+template <class T>
+struct hash<std::shared_ptr<T> > {
+  using is_avalanching = void;
+
+  auto operator()(std::shared_ptr<T> const &ptr) const noexcept -> std::uint64_t {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return detail::wyhash::hash(reinterpret_cast<std::uintptr_t>(ptr.get()));
+  }
+};
+
+template <typename Enum>
+struct hash<Enum, typename std::enable_if_t<std::is_enum_v<Enum> > > {
+  using is_avalanching = void;
+
+  auto operator()(Enum e) const noexcept -> std::uint64_t {
+    using underlying = std::underlying_type_t<Enum>;
+    return detail::wyhash::hash(static_cast<underlying>(e));
+  }
+};
+
+template <typename... Args>
+struct tuple_hash_helper {
+  // Converts the value into 64bit. If it is an integral type, just cast it. Mixing is doing the rest.
+  // If it isn't an integral we need to hash it.
+  template <typename Arg>
+  [[nodiscard]] constexpr static auto to64(Arg const &arg) -> std::uint64_t {
+    if constexpr (std::is_integral_v<Arg> || std::is_enum_v<Arg>) {
+      return static_cast<std::uint64_t>(arg);
+    } else {
+      return hash<Arg>{}(arg);
+    }
+  }
+
+  [[nodiscard]] ANKERL_UNORDERED_DENSE_DISABLE_UBSAN_UNSIGNED_INTEGER_CHECK static auto mix64(std::uint64_t state,
+                                                                                              std::uint64_t v)
+    -> std::uint64_t {
+    return detail::wyhash::mix(state + v, std::uint64_t{0x9ddfea08eb382d69});
+  }
+
+  // Creates a buffer that holds all the data from each element of the tuple. If possible we memcpy the data directly.
+  // If not, we hash the object and use this for the array. Size of the array is known at compile time, and memcpy is
+  // optimized away, so filling the buffer is highly efficient. Finally, call wyhash with this buffer.
+  template <typename T, std::size_t... Idx>
+  [[nodiscard]] static auto calc_hash(T const &t, std::index_sequence<Idx...> /*unused*/) noexcept -> std::uint64_t {
+    auto h = std::uint64_t{};
+    ((h = mix64(h, to64(std::get<Idx>(t)))), ...);
+    return h;
+  }
+};
+
+template <typename... Args>
+struct hash<std::tuple<Args...> > : tuple_hash_helper<Args...> {
+  using is_avalanching = void;
+
+  auto operator()(std::tuple<Args...> const &t) const noexcept -> std::uint64_t {
+    return tuple_hash_helper<Args...>::calc_hash(t, std::index_sequence_for<Args...>{});
+  }
+};
+
+template <typename A, typename B>
+struct hash<std::pair<A, B> > : tuple_hash_helper<A, B> {
+  using is_avalanching = void;
+
+  auto operator()(std::pair<A, B> const &t) const noexcept -> std::uint64_t {
+    return tuple_hash_helper<A, B>::calc_hash(t, std::index_sequence_for<A, B>{});
+  }
+};
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ANKERL_UNORDERED_DENSE_HASH_STATICCAST(T)                   \
+  template <>                                                       \
+  struct hash<T> {                                                  \
+    using is_avalanching = void;                                    \
+    auto operator()(T const &obj) const noexcept -> std::uint64_t { \
+      return detail::wyhash::hash(static_cast<std::uint64_t>(obj)); \
+    }                                                               \
+  }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuseless-cast"
+#endif
+// see https://en.cppreference.com/w/cpp/utility/hash
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(bool);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(char);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(signed char);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(unsigned char);
+#if ANKERL_UNORDERED_DENSE_CPP_VERSION >= 202002L && defined(__cpp_char8_t)
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(char8_t);
+#endif
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(char16_t);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(char32_t);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(wchar_t);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(short);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(unsigned short);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(int);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(unsigned int);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(long);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(long long);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(unsigned long);
+ANKERL_UNORDERED_DENSE_HASH_STATICCAST(unsigned long long);
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
+// bucket_type //////////////////////////////////////////////////////////
+
+namespace bucket_type {
+
+struct standard {
+  static constexpr std::uint32_t dist_inc         = 1U << 8U;      // skip 1 byte fingerprint
+  static constexpr std::uint32_t fingerprint_mask = dist_inc - 1;  // mask for 1 byte of fingerprint
+
+  std::uint32_t m_dist_and_fingerprint;  // upper 3 byte: distance to original bucket. lower byte: fingerprint from hash
+  std::uint32_t m_value_idx;             // index into the m_values vector.
+};
+
+ANKERL_UNORDERED_DENSE_PACK(struct big {
+  static constexpr std::uint32_t dist_inc         = 1U << 8U;      // skip 1 byte fingerprint
+  static constexpr std::uint32_t fingerprint_mask = dist_inc - 1;  // mask for 1 byte of fingerprint
+
+  std::uint32_t m_dist_and_fingerprint;  // upper 3 byte: distance to original bucket. lower byte: fingerprint from hash
+  std::size_t m_value_idx;               // index into the m_values vector.
+});
+
+}  // namespace bucket_type
+
+namespace detail {
+
+struct nonesuch {};
+
+struct default_container_t {};
+
+template <class Default, class AlwaysVoid, template <class...> class Op, class... Args>
+struct detector {
+  using value_t = std::false_type;
+  using type    = Default;
+};
+
+template <class Default, template <class...> class Op, class... Args>
+struct detector<Default, std::void_t<Op<Args...> >, Op, Args...> {
+  using value_t = std::true_type;
+  using type    = Op<Args...>;
+};
+
+template <template <class...> class Op, class... Args>
+using is_detected = typename detail::detector<detail::nonesuch, void, Op, Args...>::value_t;
+
+template <template <class...> class Op, class... Args>
+constexpr bool is_detected_v = is_detected<Op, Args...>::value;
+
+template <typename T>
+using detect_avalanching = typename T::is_avalanching;
+
+template <typename T>
+using detect_is_transparent = typename T::is_transparent;
+
+template <typename T>
+using detect_iterator = typename T::iterator;
+
+template <typename T>
+using detect_reserve = decltype(std::declval<T &>().reserve(std::size_t{}));
+
+// enable_if helpers
+
+template <typename Mapped>
+constexpr bool is_map_v = !std::is_void_v<Mapped>;
+
+// clang-format off
+template <typename Hash, typename KeyEqual>
+constexpr bool is_transparent_v = is_detected_v<detect_is_transparent, Hash> && is_detected_v<detect_is_transparent, KeyEqual>;
+// clang-format on
+
+template <typename From, typename To1, typename To2>
+constexpr bool is_neither_convertible_v = !std::is_convertible_v<From, To1> && !std::is_convertible_v<From, To2>;
+
+template <typename T>
+constexpr bool has_reserve = is_detected_v<detect_reserve, T>;
+
+// base type for map has mapped_type
+template <class T>
+struct base_table_type_map {
+  using mapped_type = T;
+};
+
+// base type for set doesn't have mapped_type
+struct base_table_type_set {};
+
+}  // namespace detail
+
+// Very much like std::deque, but faster for indexing (in most cases). As of now this doesn't implement the full
+// std::vector API, but merely what's necessary to work as an underlying container for ankerl::unordered_dense::{map,
+// set}. It allocates blocks of equal size and puts them into the m_blocks vector. That means it can grow simply by
+// adding a new block to the back of m_blocks, and doesn't double its size like an std::vector. The disadvantage is that
+// memory is not linear and thus there is one more indirection necessary for indexing.
+template <typename T, typename Allocator = std::allocator<T>, std::size_t MaxSegmentSizeBytes = 4096>
+class segmented_vector {
+  template <bool IsConst>
+  class iter_t;
 
  public:
+  using allocator_type  = Allocator;
+  using pointer         = typename std::allocator_traits<allocator_type>::pointer;
+  using const_pointer   = typename std::allocator_traits<allocator_type>::const_pointer;
+  using difference_type = typename std::allocator_traits<allocator_type>::difference_type;
   using value_type      = T;
-  using size_type       = size_t;
-  using difference_type = std::ptrdiff_t;
-  using hasher          = ArgumentHash;
-  using key_equal       = ArgumentEqual;
-  using allocator_type  = EntryAlloc;
-  using reference       = value_type &;
-  using const_reference = const value_type &;
-  using pointer         = value_type *;
-  using const_pointer   = const value_type *;
+  using size_type       = std::size_t;
+  using reference       = T &;
+  using const_reference = T const &;
+  using iterator        = iter_t<false>;
+  using const_iterator  = iter_t<true>;
 
-  sherwood_v3_table() {}
+ private:
+  using vec_alloc = typename std::allocator_traits<Allocator>::template rebind_alloc<pointer>;
+  std::vector<pointer, vec_alloc> m_blocks{};
+  std::size_t m_size{};
 
-  explicit sherwood_v3_table(size_type bucket_count, const ArgumentHash &hash = ArgumentHash(),
-                             const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
-      : EntryAlloc(alloc), Hasher(hash), Equal(equal) {
-    rehash(bucket_count);
+  // Calculates the maximum number for x in  (s << x) <= max_val
+  static constexpr auto num_bits_closest(std::size_t max_val, std::size_t s) -> std::size_t {
+    auto f = std::size_t{0};
+    while (s << (f + 1) <= max_val) { ++f; }
+    return f;
   }
 
-  sherwood_v3_table(size_type bucket_count, const ArgumentAlloc &alloc)
-      : sherwood_v3_table(bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
+  using self_t                                = segmented_vector<T, Allocator, MaxSegmentSizeBytes>;
+  static constexpr auto num_bits              = num_bits_closest(MaxSegmentSizeBytes, sizeof(T));
+  static constexpr auto num_elements_in_block = 1U << num_bits;
+  static constexpr auto mask                  = num_elements_in_block - 1U;
 
-  sherwood_v3_table(size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
-      : sherwood_v3_table(bucket_count, hash, ArgumentEqual(), alloc) {}
+  /**
+   * Iterator class doubles as const_iterator and iterator
+   */
+  template <bool IsConst>
+  class iter_t {
+    using ptr_t = std::conditional_t<IsConst, segmented_vector::const_pointer const *, segmented_vector::pointer *>;
+    ptr_t m_data{};
+    std::size_t m_idx{};
 
-  explicit sherwood_v3_table(const ArgumentAlloc &alloc) : EntryAlloc(alloc) {}
+    template <bool B>
+    friend class iter_t;
 
-  template <typename It>
-  sherwood_v3_table(It first, It last, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
-                    const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
-      : sherwood_v3_table(bucket_count, hash, equal, alloc) {
-    insert(first, last);
-  }
-
-  template <typename It>
-  sherwood_v3_table(It first, It last, size_type bucket_count, const ArgumentAlloc &alloc)
-      : sherwood_v3_table(first, last, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-
-  template <typename It>
-  sherwood_v3_table(It first, It last, size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
-      : sherwood_v3_table(first, last, bucket_count, hash, ArgumentEqual(), alloc) {}
-
-  sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
-                    const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
-      : sherwood_v3_table(bucket_count, hash, equal, alloc) {
-    if (bucket_count == 0) rehash(il.size());
-    insert(il.begin(), il.end());
-  }
-
-  sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentAlloc &alloc)
-      : sherwood_v3_table(il, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-
-  sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentHash &hash,
-                    const ArgumentAlloc &alloc)
-      : sherwood_v3_table(il, bucket_count, hash, ArgumentEqual(), alloc) {}
-
-  sherwood_v3_table(const sherwood_v3_table &other)
-      : sherwood_v3_table(other, AllocatorTraits::select_on_container_copy_construction(other.get_allocator())) {}
-
-  sherwood_v3_table(const sherwood_v3_table &other, const ArgumentAlloc &alloc)
-      : EntryAlloc(alloc), Hasher(other), Equal(other), _max_load_factor(other._max_load_factor) {
-    rehash_for_other_container(other);
-    try {
-      insert(other.begin(), other.end());
-    } catch (...) {
-      clear();
-      deallocate_data(entries, num_slots_minus_one, max_lookups);
-      throw;
-    }
-  }
-
-  sherwood_v3_table(sherwood_v3_table &&other) noexcept
-      : EntryAlloc(std::move(other)), Hasher(std::move(other)), Equal(std::move(other)) {
-    swap_pointers(other);
-  }
-
-  sherwood_v3_table(sherwood_v3_table &&other, const ArgumentAlloc &alloc) noexcept
-      : EntryAlloc(alloc), Hasher(std::move(other)), Equal(std::move(other)) {
-    swap_pointers(other);
-  }
-
-  sherwood_v3_table &operator=(const sherwood_v3_table &other) {
-    if (this == std::addressof(other)) return *this;
-
-    clear();
-    if (AllocatorTraits::propagate_on_container_copy_assignment::value) {
-      if (static_cast<EntryAlloc &>(*this) != static_cast<const EntryAlloc &>(other)) { reset_to_empty_state(); }
-      AssignIfTrue<EntryAlloc, AllocatorTraits::propagate_on_container_copy_assignment::value>()(*this, other);
-    }
-    _max_load_factor             = other._max_load_factor;
-    static_cast<Hasher &>(*this) = other;
-    static_cast<Equal &>(*this)  = other;
-    rehash_for_other_container(other);
-    insert(other.begin(), other.end());
-    return *this;
-  }
-
-  sherwood_v3_table &operator=(sherwood_v3_table &&other) noexcept {
-    if (this == std::addressof(other))
-      return *this;
-    else if (AllocatorTraits::propagate_on_container_move_assignment::value) {
-      clear();
-      reset_to_empty_state();
-      AssignIfTrue<EntryAlloc, AllocatorTraits::propagate_on_container_move_assignment::value>()(*this,
-                                                                                                 std::move(other));
-      swap_pointers(other);
-    } else if (static_cast<EntryAlloc &>(*this) == static_cast<EntryAlloc &>(other)) {
-      swap_pointers(other);
-    } else {
-      clear();
-      _max_load_factor = other._max_load_factor;
-      rehash_for_other_container(other);
-      for (T &elem : other) emplace(std::move(elem));
-      other.clear();
-    }
-    static_cast<Hasher &>(*this) = std::move(other);
-    static_cast<Equal &>(*this)  = std::move(other);
-    return *this;
-  }
-
-  ~sherwood_v3_table() {
-    clear();
-    deallocate_data(entries, num_slots_minus_one, max_lookups);
-  }
-
-  const allocator_type &get_allocator() const { return static_cast<const allocator_type &>(*this); }
-
-  const ArgumentEqual &key_eq() const { return static_cast<const ArgumentEqual &>(*this); }
-
-  const ArgumentHash &hash_function() const { return static_cast<const ArgumentHash &>(*this); }
-
-  template <typename ValueType>
-  struct templated_iterator {
-    templated_iterator() = default;
-
-    templated_iterator(EntryPointer current) : current(current) {}
-
-    EntryPointer current = EntryPointer();
-
+   public:
+    using difference_type   = segmented_vector::difference_type;
+    using value_type        = segmented_vector::value_type;
+    using reference         = std::conditional_t<IsConst, value_type const &, value_type &>;
+    using pointer           = std::conditional_t<IsConst, segmented_vector::const_pointer, segmented_vector::pointer>;
     using iterator_category = std::forward_iterator_tag;
-    using value_type        = ValueType;
-    using difference_type   = ptrdiff_t;
-    using pointer           = ValueType *;
-    using reference         = ValueType &;
 
-    friend bool operator==(const templated_iterator &lhs, const templated_iterator &rhs) {
-      return lhs.current == rhs.current;
-    }
+    iter_t() noexcept = default;
 
-    friend bool operator!=(const templated_iterator &lhs, const templated_iterator &rhs) { return !(lhs == rhs); }
+    template <bool OtherIsConst, typename = std::enable_if_t<IsConst && !OtherIsConst> >
+    // NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
+    constexpr iter_t(iter_t<OtherIsConst> const &other) noexcept : m_data(other.m_data), m_idx(other.m_idx) {}
 
-    templated_iterator &operator++() {
-      do { ++current; } while (current->is_empty());
+    constexpr iter_t(ptr_t data, std::size_t idx) noexcept : m_data(data), m_idx(idx) {}
+
+    template <bool OtherIsConst, typename = std::enable_if_t<IsConst && !OtherIsConst> >
+    constexpr auto operator=(iter_t<OtherIsConst> const &other) noexcept -> iter_t & {
+      m_data = other.m_data;
+      m_idx  = other.m_idx;
       return *this;
     }
 
-    templated_iterator operator++(int) {
-      templated_iterator copy(*this);
-      ++*this;
-      return copy;
+    constexpr auto operator++() noexcept -> iter_t & {
+      ++m_idx;
+      return *this;
     }
 
-    ValueType &operator*() const { return current->value; }
+    constexpr auto operator++(int) noexcept -> iter_t {
+      iter_t prev(*this);
+      this->operator++();
+      return prev;
+    }
 
-    ValueType *operator->() const { return std::addressof(current->value); }
+    constexpr auto operator--() noexcept -> iter_t & {
+      --m_idx;
+      return *this;
+    }
 
-    operator templated_iterator<const value_type>() const { return {current}; }
+    constexpr auto operator--(int) noexcept -> iter_t {
+      iter_t prev(*this);
+      this->operator--();
+      return prev;
+    }
+
+    [[nodiscard]] constexpr auto operator+(difference_type diff) const noexcept -> iter_t {
+      return {m_data, static_cast<std::size_t>(static_cast<difference_type>(m_idx) + diff)};
+    }
+
+    constexpr auto operator+=(difference_type diff) noexcept -> iter_t & {
+      m_idx += diff;
+      return *this;
+    }
+
+    [[nodiscard]] constexpr auto operator-(difference_type diff) const noexcept -> iter_t {
+      return {m_data, static_cast<std::size_t>(static_cast<difference_type>(m_idx) - diff)};
+    }
+
+    constexpr auto operator-=(difference_type diff) noexcept -> iter_t & {
+      m_idx -= diff;
+      return *this;
+    }
+
+    template <bool OtherIsConst>
+    [[nodiscard]] constexpr auto operator-(iter_t<OtherIsConst> const &other) const noexcept -> difference_type {
+      return static_cast<difference_type>(m_idx) - static_cast<difference_type>(other.m_idx);
+    }
+
+    constexpr auto operator*() const noexcept -> reference { return m_data[m_idx >> num_bits][m_idx & mask]; }
+
+    constexpr auto operator->() const noexcept -> pointer { return &m_data[m_idx >> num_bits][m_idx & mask]; }
+
+    template <bool O>
+    [[nodiscard]] constexpr auto operator==(iter_t<O> const &o) const noexcept -> bool {
+      return m_idx == o.m_idx;
+    }
+
+    template <bool O>
+    [[nodiscard]] constexpr auto operator!=(iter_t<O> const &o) const noexcept -> bool {
+      return !(*this == o);
+    }
+
+    template <bool O>
+    [[nodiscard]] constexpr auto operator<(iter_t<O> const &o) const noexcept -> bool {
+      return m_idx < o.m_idx;
+    }
+
+    template <bool O>
+    [[nodiscard]] constexpr auto operator>(iter_t<O> const &o) const noexcept -> bool {
+      return o < *this;
+    }
+
+    template <bool O>
+    [[nodiscard]] constexpr auto operator<=(iter_t<O> const &o) const noexcept -> bool {
+      return !(o < *this);
+    }
+
+    template <bool O>
+    [[nodiscard]] constexpr auto operator>=(iter_t<O> const &o) const noexcept -> bool {
+      return !(*this < o);
+    }
   };
 
-  using iterator       = templated_iterator<value_type>;
-  using const_iterator = templated_iterator<const value_type>;
+  // slow path: need to allocate a new segment every once in a while
+  void increase_capacity() {
+    auto ba       = Allocator(m_blocks.get_allocator());
+    pointer block = std::allocator_traits<Allocator>::allocate(ba, num_elements_in_block);
+    m_blocks.push_back(block);
+  }
 
-  iterator begin() {
-    for (EntryPointer it = entries;; ++it) {
-      if (it->has_value()) return {it};
+  // Moves everything from other
+  void append_everything_from(segmented_vector &&other) {  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+    reserve(size() + other.size());
+    for (auto &&o : other) { emplace_back(std::move(o)); }
+  }
+
+  // Copies everything from other
+  void append_everything_from(segmented_vector const &other) {
+    reserve(size() + other.size());
+    for (auto const &o : other) { emplace_back(o); }
+  }
+
+  void dealloc() {
+    auto ba = Allocator(m_blocks.get_allocator());
+    for (auto ptr : m_blocks) { std::allocator_traits<Allocator>::deallocate(ba, ptr, num_elements_in_block); }
+  }
+
+  [[nodiscard]] static constexpr auto calc_num_blocks_for_capacity(std::size_t capacity) {
+    return (capacity + num_elements_in_block - 1U) / num_elements_in_block;
+  }
+
+  void resize_shrink(std::size_t new_size) {
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+      for (std::size_t ix = new_size; ix < m_size; ++ix) { operator[](ix).~T(); }
+    }
+    m_size = new_size;
+  }
+
+ public:
+  segmented_vector() = default;
+
+  // NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
+  segmented_vector(Allocator alloc) : m_blocks(vec_alloc(alloc)) {}
+
+  segmented_vector(segmented_vector &&other, Allocator alloc) : segmented_vector(alloc) { *this = std::move(other); }
+
+  segmented_vector(segmented_vector const &other, Allocator alloc) : m_blocks(vec_alloc(alloc)) {
+    append_everything_from(other);
+  }
+
+  segmented_vector(segmented_vector &&other) noexcept : segmented_vector(std::move(other), other.get_allocator()) {}
+
+  segmented_vector(segmented_vector const &other) { append_everything_from(other); }
+
+  auto operator=(segmented_vector const &other) -> segmented_vector & {
+    if (this == &other) { return *this; }
+    clear();
+    append_everything_from(other);
+    return *this;
+  }
+
+  auto operator=(segmented_vector &&other) noexcept -> segmented_vector & {
+    clear();
+    dealloc();
+    if (other.get_allocator() == get_allocator()) {
+      m_blocks = std::move(other.m_blocks);
+      m_size   = std::exchange(other.m_size, {});
+    } else {
+      // make sure to construct with other's allocator!
+      m_blocks = std::vector<pointer, vec_alloc>(vec_alloc(other.get_allocator()));
+      append_everything_from(std::move(other));
+    }
+    return *this;
+  }
+
+  ~segmented_vector() {
+    clear();
+    dealloc();
+  }
+
+  [[nodiscard]] constexpr auto size() const -> std::size_t { return m_size; }
+
+  [[nodiscard]] constexpr auto capacity() const -> std::size_t { return m_blocks.size() * num_elements_in_block; }
+
+  // Indexing is highly performance critical
+  [[nodiscard]] constexpr auto operator[](std::size_t i) const noexcept -> T const & {
+    return m_blocks[i >> num_bits][i & mask];
+  }
+
+  [[nodiscard]] constexpr auto operator[](std::size_t i) noexcept -> T & { return m_blocks[i >> num_bits][i & mask]; }
+
+  [[nodiscard]] constexpr auto begin() -> iterator { return {m_blocks.data(), 0U}; }
+
+  [[nodiscard]] constexpr auto begin() const -> const_iterator { return {m_blocks.data(), 0U}; }
+
+  [[nodiscard]] constexpr auto cbegin() const -> const_iterator { return {m_blocks.data(), 0U}; }
+
+  [[nodiscard]] constexpr auto end() -> iterator { return {m_blocks.data(), m_size}; }
+
+  [[nodiscard]] constexpr auto end() const -> const_iterator { return {m_blocks.data(), m_size}; }
+
+  [[nodiscard]] constexpr auto cend() const -> const_iterator { return {m_blocks.data(), m_size}; }
+
+  [[nodiscard]] constexpr auto back() -> reference { return operator[](m_size - 1); }
+
+  [[nodiscard]] constexpr auto back() const -> const_reference { return operator[](m_size - 1); }
+
+  void pop_back() {
+    back().~T();
+    --m_size;
+  }
+
+  [[nodiscard]] auto empty() const { return 0 == m_size; }
+
+  void reserve(std::size_t new_capacity) {
+    m_blocks.reserve(calc_num_blocks_for_capacity(new_capacity));
+    while (new_capacity > capacity()) { increase_capacity(); }
+  }
+
+  void resize(std::size_t const count) {
+    if (count < m_size) {
+      resize_shrink(count);
+    } else if (count > m_size) {
+      std::size_t const new_elems = count - m_size;
+      reserve(count);
+      for (std::size_t ix = 0; ix < new_elems; ++ix) { emplace_back(); }
     }
   }
 
-  const_iterator begin() const {
-    for (EntryPointer it = entries;; ++it) {
-      if (it->has_value()) return {it};
+  void resize(std::size_t const count, value_type const &value) {
+    if (count < m_size) {
+      resize_shrink(count);
+    } else if (count > m_size) {
+      std::size_t const new_elems = count - m_size;
+      reserve(count);
+      for (std::size_t ix = 0; ix < new_elems; ++ix) { emplace_back(value); }
     }
   }
 
-  const_iterator cbegin() const { return begin(); }
+  [[nodiscard]] auto get_allocator() const -> allocator_type { return allocator_type{m_blocks.get_allocator()}; }
 
-  iterator end() { return {entries + static_cast<ptrdiff_t>(num_slots_minus_one + max_lookups)}; }
-
-  const_iterator end() const { return {entries + static_cast<ptrdiff_t>(num_slots_minus_one + max_lookups)}; }
-
-  const_iterator cend() const { return end(); }
-
-  iterator find(const FindKey &key) {
-    size_t index    = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
-    EntryPointer it = entries + ptrdiff_t(index);
-    for (int8_t distance = 0; it->distance_from_desired >= distance; ++distance, ++it) {
-      if (compares_equal(key, it->value)) return {it};
-    }
-    return end();
-  }
-
-  const_iterator find(const FindKey &key) const { return const_cast<sherwood_v3_table *>(this)->find(key); }
-
-  size_t count(const FindKey &key) const { return find(key) == end() ? 0 : 1; }
-
-  bool contains(const FindKey &key) const { return find(key) != end(); }
-
-  std::pair<iterator, iterator> equal_range(const FindKey &key) {
-    iterator found = find(key);
-    if (found == end())
-      return {found, found};
-    else
-      return {found, std::next(found)};
-  }
-
-  std::pair<const_iterator, const_iterator> equal_range(const FindKey &key) const {
-    const_iterator found = find(key);
-    if (found == end())
-      return {found, found};
-    else
-      return {found, std::next(found)};
-  }
-
-  template <typename Key, typename... Args>
-  std::pair<iterator, bool> emplace(Key &&key, Args &&...args) {
-    size_t index                 = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
-    EntryPointer current_entry   = entries + ptrdiff_t(index);
-    int8_t distance_from_desired = 0;
-    for (; current_entry->distance_from_desired >= distance_from_desired; ++current_entry, ++distance_from_desired) {
-      if (compares_equal(key, current_entry->value)) return {{current_entry}, false};
-    }
-    return emplace_new_key(distance_from_desired, current_entry, std::forward<Key>(key), std::forward<Args>(args)...);
-  }
-
-  std::pair<iterator, bool> insert(const value_type &value) { return emplace(value); }
-
-  std::pair<iterator, bool> insert(value_type &&value) { return emplace(std::move(value)); }
-
-  template <typename... Args>
-  iterator emplace_hint(const_iterator, Args &&...args) {
-    return emplace(std::forward<Args>(args)...).first;
-  }
-
-  iterator insert(const_iterator, const value_type &value) { return emplace(value).first; }
-
-  iterator insert(const_iterator, value_type &&value) { return emplace(std::move(value)).first; }
-
-  template <typename It>
-  void insert(It begin, It end) {
-    for (; begin != end; ++begin) { emplace(*begin); }
-  }
-
-  void insert(std::initializer_list<value_type> il) { insert(il.begin(), il.end()); }
-
-  void rehash(size_t num_buckets) {
-    num_buckets =
-      std::max(num_buckets, static_cast<size_t>(std::ceil(num_elements / static_cast<double>(_max_load_factor))));
-    if (num_buckets == 0) {
-      reset_to_empty_state();
-      return;
-    }
-    auto new_prime_index = hash_policy.next_size_over(num_buckets);
-    if (num_buckets == bucket_count()) return;
-    int8_t new_max_lookups = compute_max_lookups(num_buckets);
-    EntryPointer new_buckets(AllocatorTraits::allocate(*this, num_buckets + new_max_lookups));
-    EntryPointer special_end_item = new_buckets + static_cast<ptrdiff_t>(num_buckets + new_max_lookups - 1);
-    for (EntryPointer it = new_buckets; it != special_end_item; ++it) it->distance_from_desired = -1;
-    special_end_item->distance_from_desired = Entry::special_end_value;
-    std::swap(entries, new_buckets);
-    std::swap(num_slots_minus_one, num_buckets);
-    --num_slots_minus_one;
-    hash_policy.commit(new_prime_index);
-    int8_t old_max_lookups = max_lookups;
-    max_lookups            = new_max_lookups;
-    num_elements           = 0;
-    for (EntryPointer it = new_buckets, end = it + static_cast<ptrdiff_t>(num_buckets + old_max_lookups); it != end;
-         ++it) {
-      if (it->has_value()) {
-        emplace(std::move(it->value));
-        it->destroy_value();
-      }
-    }
-    deallocate_data(new_buckets, num_buckets, old_max_lookups);
-  }
-
-  void reserve(size_t num_elements) {
-    size_t required_buckets = num_buckets_for_reserve(num_elements);
-    if (required_buckets > bucket_count()) rehash(required_buckets);
-  }
-
-  // the return value is a type that can be converted to an iterator
-  // the reason for doing this is that it's not free to find the
-  // iterator pointing at the next element. if you care about the
-  // next iterator, turn the return value into an iterator
-  convertible_to_iterator erase(const_iterator to_erase) {
-    EntryPointer current = to_erase.current;
-    current->destroy_value();
-    --num_elements;
-    for (EntryPointer next = current + ptrdiff_t(1); !next->is_at_desired_position(); ++current, ++next) {
-      current->emplace(next->distance_from_desired - 1, std::move(next->value));
-      next->destroy_value();
-    }
-    return {to_erase.current};
-  }
-
-  iterator erase(const_iterator begin_it, const_iterator end_it) {
-    if (begin_it == end_it) return {begin_it.current};
-    for (EntryPointer it = begin_it.current, end = end_it.current; it != end; ++it) {
-      if (it->has_value()) {
-        it->destroy_value();
-        --num_elements;
-      }
-    }
-    if (end_it == this->end()) return this->end();
-    ptrdiff_t num_to_move =
-      std::min(static_cast<ptrdiff_t>(end_it.current->distance_from_desired), end_it.current - begin_it.current);
-    EntryPointer to_return = end_it.current - num_to_move;
-    for (EntryPointer it = end_it.current; !it->is_at_desired_position();) {
-      EntryPointer target = it - num_to_move;
-      target->emplace(it->distance_from_desired - num_to_move, std::move(it->value));
-      it->destroy_value();
-      ++it;
-      num_to_move = std::min(static_cast<ptrdiff_t>(it->distance_from_desired), num_to_move);
-    }
-    return {to_return};
-  }
-
-  size_t erase(const FindKey &key) {
-    auto found = find(key);
-    if (found == end())
-      return 0;
-    else {
-      erase(found);
-      return 1;
-    }
+  template <class... Args>
+  auto emplace_back(Args &&...args) -> reference {
+    if (m_size == capacity()) { increase_capacity(); }
+    auto *ptr = static_cast<void *>(&operator[](m_size));
+    auto &ref = *new (ptr) T(std::forward<Args>(args)...);
+    ++m_size;
+    return ref;
   }
 
   void clear() {
-    for (EntryPointer it = entries, end = it + static_cast<ptrdiff_t>(num_slots_minus_one + max_lookups); it != end;
-         ++it) {
-      if (it->has_value()) it->destroy_value();
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+      for (std::size_t i = 0, s = size(); i < s; ++i) { operator[](i).~T(); }
     }
-    num_elements = 0;
+    m_size = 0;
   }
 
-  void shrink_to_fit() { rehash_for_other_container(*this); }
-
-  void swap(sherwood_v3_table &other) {
-    using std::swap;
-    swap_pointers(other);
-    swap(static_cast<ArgumentHash &>(*this), static_cast<ArgumentHash &>(other));
-    swap(static_cast<ArgumentEqual &>(*this), static_cast<ArgumentEqual &>(other));
-    if (AllocatorTraits::propagate_on_container_swap::value)
-      swap(static_cast<EntryAlloc &>(*this), static_cast<EntryAlloc &>(other));
+  void shrink_to_fit() {
+    auto ba                  = Allocator(m_blocks.get_allocator());
+    auto num_blocks_required = calc_num_blocks_for_capacity(m_size);
+    while (m_blocks.size() > num_blocks_required) {
+      std::allocator_traits<Allocator>::deallocate(ba, m_blocks.back(), num_elements_in_block);
+      m_blocks.pop_back();
+    }
+    m_blocks.shrink_to_fit();
   }
+};
 
-  size_t size() const { return num_elements; }
+namespace detail {
 
-  size_t max_size() const { return (AllocatorTraits::max_size(*this)) / sizeof(Entry); }
+// This is it, the table. Doubles as map and set, and uses `void` for T when its used as a set.
+template <class Key,
+          class T,  // when void, treat it as a set.
+          class Hash, class KeyEqual, class AllocatorOrContainer, class Bucket, class BucketContainer, bool IsSegmented>
+class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>, base_table_type_set> {
+  using underlying_value_type = std::conditional_t<is_map_v<T>, std::pair<Key, T>, Key>;
+  using underlying_container_type =
+    std::conditional_t<IsSegmented, segmented_vector<underlying_value_type, AllocatorOrContainer>,
+                       std::vector<underlying_value_type, AllocatorOrContainer> >;
 
-  size_t bucket_count() const { return num_slots_minus_one ? num_slots_minus_one + 1 : 0; }
-
-  size_type max_bucket_count() const { return (AllocatorTraits::max_size(*this) - min_lookups) / sizeof(Entry); }
-
-  size_t bucket(const FindKey &key) const { return hash_policy.index_for_hash(hash_object(key), num_slots_minus_one); }
-
-  float load_factor() const {
-    size_t buckets = bucket_count();
-    if (buckets)
-      return static_cast<float>(num_elements) / bucket_count();
-    else
-      return 0;
-  }
-
-  void max_load_factor(float value) { _max_load_factor = value; }
-
-  float max_load_factor() const { return _max_load_factor; }
-
-  bool empty() const { return num_elements == 0; }
+ public:
+  using value_container_type = std::conditional_t<is_detected_v<detect_iterator, AllocatorOrContainer>,
+                                                  AllocatorOrContainer, underlying_container_type>;
 
  private:
-  EntryPointer entries       = Entry::empty_default_table();
-  size_t num_slots_minus_one = 0;
-  typename HashPolicySelector<ArgumentHash>::type hash_policy;
-  int8_t max_lookups     = detailv3::min_lookups - 1;
-  float _max_load_factor = 0.5f;
-  size_t num_elements    = 0;
+  using bucket_alloc =
+    typename std::allocator_traits<typename value_container_type::allocator_type>::template rebind_alloc<Bucket>;
+  using default_bucket_container_type =
+    std::conditional_t<IsSegmented, segmented_vector<Bucket, bucket_alloc>, std::vector<Bucket, bucket_alloc> >;
 
-  static int8_t compute_max_lookups(size_t num_buckets) {
-    int8_t desired = detailv3::log2(num_buckets);
-    return std::max(detailv3::min_lookups, desired);
+  using bucket_container_type = std::conditional_t<std::is_same_v<BucketContainer, detail::default_container_t>,
+                                                   default_bucket_container_type, BucketContainer>;
+
+  static constexpr std::uint8_t initial_shifts   = 64 - 2;  // 2^(64-m_shift) number of buckets
+  static constexpr float default_max_load_factor = 0.8F;
+
+ public:
+  using key_type        = Key;
+  using value_type      = typename value_container_type::value_type;
+  using size_type       = typename value_container_type::size_type;
+  using difference_type = typename value_container_type::difference_type;
+  using hasher          = Hash;
+  using key_equal       = KeyEqual;
+  using allocator_type  = typename value_container_type::allocator_type;
+  using reference       = typename value_container_type::reference;
+  using const_reference = typename value_container_type::const_reference;
+  using pointer         = typename value_container_type::pointer;
+  using const_pointer   = typename value_container_type::const_pointer;
+  using const_iterator  = typename value_container_type::const_iterator;
+  using iterator        = std::conditional_t<is_map_v<T>, typename value_container_type::iterator, const_iterator>;
+  using bucket_type     = Bucket;
+
+ private:
+  using value_idx_type            = decltype(Bucket::m_value_idx);
+  using dist_and_fingerprint_type = decltype(Bucket::m_dist_and_fingerprint);
+
+  static_assert(std::is_trivially_destructible_v<Bucket>, "assert there's no need to call destructor / std::destroy");
+  static_assert(std::is_trivially_copyable_v<Bucket>, "assert we can just memset / memcpy");
+
+  value_container_type m_values{};  // Contains all the key-value pairs in one densely stored container. No holes.
+  bucket_container_type m_buckets{};
+  std::size_t m_max_bucket_capacity = 0;
+  float m_max_load_factor           = default_max_load_factor;
+  Hash m_hash{};
+  KeyEqual m_equal{};
+  std::uint8_t m_shifts = initial_shifts;
+
+  [[nodiscard]] auto next(value_idx_type bucket_idx) const -> value_idx_type {
+    if (ANKERL_UNORDERED_DENSE_UNLIKELY(bucket_idx + 1U == bucket_count())) ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR {
+        return 0;
+      }
+
+    return static_cast<value_idx_type>(bucket_idx + 1U);
   }
 
-  size_t num_buckets_for_reserve(size_t num_elements) const {
-    return static_cast<size_t>(std::ceil(num_elements / std::min(0.5, static_cast<double>(_max_load_factor))));
+  // Helper to access bucket through pointer types
+  [[nodiscard]] static constexpr auto at(bucket_container_type &bucket, std::size_t offset) -> Bucket & {
+    return bucket[offset];
   }
 
-  void rehash_for_other_container(const sherwood_v3_table &other) {
-    rehash(std::min(num_buckets_for_reserve(other.size()), other.bucket_count()));
+  [[nodiscard]] static constexpr auto at(const bucket_container_type &bucket, std::size_t offset) -> const Bucket & {
+    return bucket[offset];
   }
 
-  void swap_pointers(sherwood_v3_table &other) {
-    using std::swap;
-    swap(hash_policy, other.hash_policy);
-    swap(entries, other.entries);
-    swap(num_slots_minus_one, other.num_slots_minus_one);
-    swap(num_elements, other.num_elements);
-    swap(max_lookups, other.max_lookups);
-    swap(_max_load_factor, other._max_load_factor);
+  // use the dist_inc and dist_dec functions so that std::uint16_t types work without warning
+  [[nodiscard]] static constexpr auto dist_inc(dist_and_fingerprint_type x) -> dist_and_fingerprint_type {
+    return static_cast<dist_and_fingerprint_type>(x + Bucket::dist_inc);
   }
 
-  template <typename Key, typename... Args>
-  SKA_NOINLINE(std::pair<iterator, bool>)
-  emplace_new_key(int8_t distance_from_desired, EntryPointer current_entry, Key &&key, Args &&...args) {
-    using std::swap;
-    if (num_slots_minus_one == 0 || distance_from_desired == max_lookups ||
-        num_elements + 1 > (num_slots_minus_one + 1) * static_cast<double>(_max_load_factor)) {
-      grow();
-      return emplace(std::forward<Key>(key), std::forward<Args>(args)...);
-    } else if (current_entry->is_empty()) {
-      current_entry->emplace(distance_from_desired, std::forward<Key>(key), std::forward<Args>(args)...);
-      ++num_elements;
-      return {{current_entry}, true};
-    }
-    value_type to_insert(std::forward<Key>(key), std::forward<Args>(args)...);
-    swap(distance_from_desired, current_entry->distance_from_desired);
-    swap(to_insert, current_entry->value);
-    iterator result = {current_entry};
-    for (++distance_from_desired, ++current_entry;; ++current_entry) {
-      if (current_entry->is_empty()) {
-        current_entry->emplace(distance_from_desired, std::move(to_insert));
-        ++num_elements;
-        return {result, true};
-      } else if (current_entry->distance_from_desired < distance_from_desired) {
-        swap(distance_from_desired, current_entry->distance_from_desired);
-        swap(to_insert, current_entry->value);
-        ++distance_from_desired;
+  [[nodiscard]] static constexpr auto dist_dec(dist_and_fingerprint_type x) -> dist_and_fingerprint_type {
+    return static_cast<dist_and_fingerprint_type>(x - Bucket::dist_inc);
+  }
+
+  // The goal of mixed_hash is to always produce a high quality 64bit hash.
+  template <typename K>
+  [[nodiscard]] constexpr auto mixed_hash(K const &key) const -> std::uint64_t {
+    if constexpr (is_detected_v<detect_avalanching, Hash>) {
+      // we know that the hash is good because is_avalanching.
+      if constexpr (sizeof(decltype(m_hash(key))) < sizeof(std::uint64_t)) {
+        // 32bit hash and is_avalanching => multiply with a constant to avalanche bits upwards
+        return m_hash(key) * UINT64_C(0x9ddfea08eb382d69);
       } else {
-        ++distance_from_desired;
-        if (distance_from_desired == max_lookups) {
-          swap(to_insert, result.current->value);
-          grow();
-          return emplace(std::move(to_insert));
-        }
+        // 64bit and is_avalanching => only use the hash itself.
+        return m_hash(key);
+      }
+    } else {
+      // not is_avalanching => apply wyhash
+      return wyhash::hash(m_hash(key));
+    }
+  }
+
+  [[nodiscard]] constexpr auto dist_and_fingerprint_from_hash(std::uint64_t hash) const -> dist_and_fingerprint_type {
+    return Bucket::dist_inc | (static_cast<dist_and_fingerprint_type>(hash) & Bucket::fingerprint_mask);
+  }
+
+  [[nodiscard]] constexpr auto bucket_idx_from_hash(std::uint64_t hash) const -> value_idx_type {
+    return static_cast<value_idx_type>(hash >> m_shifts);
+  }
+
+  [[nodiscard]] static constexpr auto get_key(value_type const &vt) -> key_type const & {
+    if constexpr (is_map_v<T>) {
+      return vt.first;
+    } else {
+      return vt;
+    }
+  }
+
+  template <typename K>
+  [[nodiscard]] auto next_while_less(K const &key) const -> Bucket {
+    auto hash                 = mixed_hash(key);
+    auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
+    auto bucket_idx           = bucket_idx_from_hash(hash);
+
+    while (dist_and_fingerprint < at(m_buckets, bucket_idx).m_dist_and_fingerprint) {
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
+    }
+    return {dist_and_fingerprint, bucket_idx};
+  }
+
+  void place_and_shift_up(Bucket bucket, value_idx_type place) {
+    while (0 != at(m_buckets, place).m_dist_and_fingerprint) {
+      bucket                        = std::exchange(at(m_buckets, place), bucket);
+      bucket.m_dist_and_fingerprint = dist_inc(bucket.m_dist_and_fingerprint);
+      place                         = next(place);
+    }
+    at(m_buckets, place) = bucket;
+  }
+
+  void erase_and_shift_down(value_idx_type bucket_idx) {
+    // shift down until either empty or an element with correct spot is found
+    auto next_bucket_idx = next(bucket_idx);
+    while (at(m_buckets, next_bucket_idx).m_dist_and_fingerprint >= Bucket::dist_inc * 2) {
+      auto &next_bucket         = at(m_buckets, next_bucket_idx);
+      at(m_buckets, bucket_idx) = {dist_dec(next_bucket.m_dist_and_fingerprint), next_bucket.m_value_idx};
+      bucket_idx                = std::exchange(next_bucket_idx, next(next_bucket_idx));
+    }
+    at(m_buckets, bucket_idx) = {};
+  }
+
+  [[nodiscard]] static constexpr auto calc_num_buckets(std::uint8_t shifts) -> std::size_t {
+    return (std::min)(max_bucket_count(), std::size_t{1} << (64U - shifts));
+  }
+
+  [[nodiscard]] constexpr auto calc_shifts_for_size(std::size_t s) const -> std::uint8_t {
+    auto shifts = initial_shifts;
+    while (shifts > 0 &&
+           static_cast<std::size_t>(static_cast<float>(calc_num_buckets(shifts)) * max_load_factor()) < s) {
+      --shifts;
+    }
+    return shifts;
+  }
+
+  // assumes m_values has data, m_buckets=m_buckets_end=nullptr, m_shifts is INITIAL_SHIFTS
+  void copy_buckets(table const &other) {
+    // assumes m_values has already the correct data copied over.
+    if (empty()) {
+      // when empty, at least allocate an initial buckets and clear them.
+      allocate_buckets_from_shift();
+      clear_buckets();
+    } else {
+      m_shifts = other.m_shifts;
+      allocate_buckets_from_shift();
+      if constexpr (IsSegmented || !std::is_same_v<BucketContainer, default_container_t>) {
+        for (auto i = 0UL; i < bucket_count(); ++i) { at(m_buckets, i) = at(other.m_buckets, i); }
+      } else {
+        std::memcpy(m_buckets.data(), other.m_buckets.data(), sizeof(Bucket) * bucket_count());
       }
     }
   }
 
-  void grow() { rehash(std::max(size_t(4), 2 * bucket_count())); }
+  /**
+   * True when no element can be added any more without increasing the size
+   */
+  [[nodiscard]] auto is_full() const -> bool { return size() > m_max_bucket_capacity; }
 
-  void deallocate_data(EntryPointer begin, size_t num_slots_minus_one, int8_t max_lookups) {
-    if (begin != Entry::empty_default_table()) {
-      AllocatorTraits::deallocate(*this, begin, num_slots_minus_one + max_lookups + 1);
+  void deallocate_buckets() {
+    m_buckets.clear();
+    m_buckets.shrink_to_fit();
+    m_max_bucket_capacity = 0;
+  }
+
+  void allocate_buckets_from_shift() {
+    auto num_buckets = calc_num_buckets(m_shifts);
+    if constexpr (IsSegmented || !std::is_same_v<BucketContainer, default_container_t>) {
+      if constexpr (has_reserve<bucket_container_type>) { m_buckets.reserve(num_buckets); }
+      for (std::size_t i = m_buckets.size(); i < num_buckets; ++i) { m_buckets.emplace_back(); }
+    } else {
+      m_buckets.resize(num_buckets);
+    }
+    if (num_buckets == max_bucket_count()) {
+      // reached the maximum, make sure we can use each bucket
+      m_max_bucket_capacity = max_bucket_count();
+    } else {
+      m_max_bucket_capacity = static_cast<value_idx_type>(static_cast<float>(num_buckets) * max_load_factor());
     }
   }
 
-  void reset_to_empty_state() {
-    deallocate_data(entries, num_slots_minus_one, max_lookups);
-    entries             = Entry::empty_default_table();
-    num_slots_minus_one = 0;
-    hash_policy.reset();
-    max_lookups = detailv3::min_lookups - 1;
+  void clear_buckets() {
+    if constexpr (IsSegmented || !std::is_same_v<BucketContainer, default_container_t>) {
+      for (auto &&e : m_buckets) { std::memset(&e, 0, sizeof(e)); }
+    } else {
+      std::memset(m_buckets.data(), 0, sizeof(Bucket) * bucket_count());
+    }
   }
 
-  template <typename U>
-  size_t hash_object(const U &key) {
-    return static_cast<Hasher &>(*this)(key);
+  void clear_and_fill_buckets_from_values() {
+    clear_buckets();
+    for (value_idx_type value_idx = 0, end_idx = static_cast<value_idx_type>(m_values.size()); value_idx < end_idx;
+         ++value_idx) {
+      auto const &key                     = get_key(m_values[value_idx]);
+      auto [dist_and_fingerprint, bucket] = next_while_less(key);
+
+      // we know for certain that key has not yet been inserted, so no need to check it.
+      place_and_shift_up({dist_and_fingerprint, value_idx}, bucket);
+    }
   }
 
-  template <typename U>
-  size_t hash_object(const U &key) const {
-    return static_cast<const Hasher &>(*this)(key);
+  void increase_size() {
+    if (m_max_bucket_capacity == max_bucket_count()) {
+      // remove the value again, we can't add it!
+      m_values.pop_back();
+      on_error_bucket_overflow();
+    }
+    --m_shifts;
+    if constexpr (!IsSegmented || std::is_same_v<BucketContainer, default_container_t>) { deallocate_buckets(); }
+    allocate_buckets_from_shift();
+    clear_and_fill_buckets_from_values();
   }
 
-  template <typename L, typename R>
-  bool compares_equal(const L &lhs, const R &rhs) {
-    return static_cast<Equal &>(*this)(lhs, rhs);
+  template <typename Op>
+  void do_erase(value_idx_type bucket_idx, Op handle_erased_value) {
+    auto const value_idx_to_remove = at(m_buckets, bucket_idx).m_value_idx;
+    erase_and_shift_down(bucket_idx);
+    handle_erased_value(std::move(m_values[value_idx_to_remove]));
+
+    // update m_values
+    if (value_idx_to_remove != m_values.size() - 1) {
+      // no luck, we'll have to replace the value with the last one and update the index accordingly
+      auto &val = m_values[value_idx_to_remove];
+      val       = std::move(m_values.back());
+
+      // update the values_idx of the moved entry. No need to play the info game, just look until we find the values_idx
+      bucket_idx                 = bucket_idx_from_hash(mixed_hash(get_key(val)));
+      auto const values_idx_back = static_cast<value_idx_type>(m_values.size() - 1);
+      while (values_idx_back != at(m_buckets, bucket_idx).m_value_idx) { bucket_idx = next(bucket_idx); }
+      at(m_buckets, bucket_idx).m_value_idx = value_idx_to_remove;
+    }
+    m_values.pop_back();
   }
 
-  struct convertible_to_iterator {
-    EntryPointer it;
+  template <typename K, typename Op>
+  auto do_erase_key(K &&key, Op handle_erased_value) -> std::size_t {  // NOLINT(cppcoreguidelines-missing-std-forward)
+    if (empty()) { return 0; }
 
-    operator iterator() {
-      if (it->has_value())
-        return {it};
-      else
-        return ++iterator{it};
+    auto [dist_and_fingerprint, bucket_idx] = next_while_less(key);
+
+    while (dist_and_fingerprint == at(m_buckets, bucket_idx).m_dist_and_fingerprint &&
+           !m_equal(key, get_key(m_values[at(m_buckets, bucket_idx).m_value_idx]))) {
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
     }
 
-    operator const_iterator() {
-      if (it->has_value())
-        return {it};
-      else
-        return ++const_iterator{it};
-    }
-  };
-};
-}  // namespace detailv3
-
-struct prime_number_hash_policy {
-  static size_t mod0(size_t) { return 0llu; }
-
-  static size_t mod2(size_t hash) { return hash % 2llu; }
-
-  static size_t mod3(size_t hash) { return hash % 3llu; }
-
-  static size_t mod5(size_t hash) { return hash % 5llu; }
-
-  static size_t mod7(size_t hash) { return hash % 7llu; }
-
-  static size_t mod11(size_t hash) { return hash % 11llu; }
-
-  static size_t mod13(size_t hash) { return hash % 13llu; }
-
-  static size_t mod17(size_t hash) { return hash % 17llu; }
-
-  static size_t mod23(size_t hash) { return hash % 23llu; }
-
-  static size_t mod29(size_t hash) { return hash % 29llu; }
-
-  static size_t mod37(size_t hash) { return hash % 37llu; }
-
-  static size_t mod47(size_t hash) { return hash % 47llu; }
-
-  static size_t mod59(size_t hash) { return hash % 59llu; }
-
-  static size_t mod73(size_t hash) { return hash % 73llu; }
-
-  static size_t mod97(size_t hash) { return hash % 97llu; }
-
-  static size_t mod127(size_t hash) { return hash % 127llu; }
-
-  static size_t mod151(size_t hash) { return hash % 151llu; }
-
-  static size_t mod197(size_t hash) { return hash % 197llu; }
-
-  static size_t mod251(size_t hash) { return hash % 251llu; }
-
-  static size_t mod313(size_t hash) { return hash % 313llu; }
-
-  static size_t mod397(size_t hash) { return hash % 397llu; }
-
-  static size_t mod499(size_t hash) { return hash % 499llu; }
-
-  static size_t mod631(size_t hash) { return hash % 631llu; }
-
-  static size_t mod797(size_t hash) { return hash % 797llu; }
-
-  static size_t mod1009(size_t hash) { return hash % 1009llu; }
-
-  static size_t mod1259(size_t hash) { return hash % 1259llu; }
-
-  static size_t mod1597(size_t hash) { return hash % 1597llu; }
-
-  static size_t mod2011(size_t hash) { return hash % 2011llu; }
-
-  static size_t mod2539(size_t hash) { return hash % 2539llu; }
-
-  static size_t mod3203(size_t hash) { return hash % 3203llu; }
-
-  static size_t mod4027(size_t hash) { return hash % 4027llu; }
-
-  static size_t mod5087(size_t hash) { return hash % 5087llu; }
-
-  static size_t mod6421(size_t hash) { return hash % 6421llu; }
-
-  static size_t mod8089(size_t hash) { return hash % 8089llu; }
-
-  static size_t mod10193(size_t hash) { return hash % 10193llu; }
-
-  static size_t mod12853(size_t hash) { return hash % 12853llu; }
-
-  static size_t mod16193(size_t hash) { return hash % 16193llu; }
-
-  static size_t mod20399(size_t hash) { return hash % 20399llu; }
-
-  static size_t mod25717(size_t hash) { return hash % 25717llu; }
-
-  static size_t mod32401(size_t hash) { return hash % 32401llu; }
-
-  static size_t mod40823(size_t hash) { return hash % 40823llu; }
-
-  static size_t mod51437(size_t hash) { return hash % 51437llu; }
-
-  static size_t mod64811(size_t hash) { return hash % 64811llu; }
-
-  static size_t mod81649(size_t hash) { return hash % 81649llu; }
-
-  static size_t mod102877(size_t hash) { return hash % 102877llu; }
-
-  static size_t mod129607(size_t hash) { return hash % 129607llu; }
-
-  static size_t mod163307(size_t hash) { return hash % 163307llu; }
-
-  static size_t mod205759(size_t hash) { return hash % 205759llu; }
-
-  static size_t mod259229(size_t hash) { return hash % 259229llu; }
-
-  static size_t mod326617(size_t hash) { return hash % 326617llu; }
-
-  static size_t mod411527(size_t hash) { return hash % 411527llu; }
-
-  static size_t mod518509(size_t hash) { return hash % 518509llu; }
-
-  static size_t mod653267(size_t hash) { return hash % 653267llu; }
-
-  static size_t mod823117(size_t hash) { return hash % 823117llu; }
-
-  static size_t mod1037059(size_t hash) { return hash % 1037059llu; }
-
-  static size_t mod1306601(size_t hash) { return hash % 1306601llu; }
-
-  static size_t mod1646237(size_t hash) { return hash % 1646237llu; }
-
-  static size_t mod2074129(size_t hash) { return hash % 2074129llu; }
-
-  static size_t mod2613229(size_t hash) { return hash % 2613229llu; }
-
-  static size_t mod3292489(size_t hash) { return hash % 3292489llu; }
-
-  static size_t mod4148279(size_t hash) { return hash % 4148279llu; }
-
-  static size_t mod5226491(size_t hash) { return hash % 5226491llu; }
-
-  static size_t mod6584983(size_t hash) { return hash % 6584983llu; }
-
-  static size_t mod8296553(size_t hash) { return hash % 8296553llu; }
-
-  static size_t mod10453007(size_t hash) { return hash % 10453007llu; }
-
-  static size_t mod13169977(size_t hash) { return hash % 13169977llu; }
-
-  static size_t mod16593127(size_t hash) { return hash % 16593127llu; }
-
-  static size_t mod20906033(size_t hash) { return hash % 20906033llu; }
-
-  static size_t mod26339969(size_t hash) { return hash % 26339969llu; }
-
-  static size_t mod33186281(size_t hash) { return hash % 33186281llu; }
-
-  static size_t mod41812097(size_t hash) { return hash % 41812097llu; }
-
-  static size_t mod52679969(size_t hash) { return hash % 52679969llu; }
-
-  static size_t mod66372617(size_t hash) { return hash % 66372617llu; }
-
-  static size_t mod83624237(size_t hash) { return hash % 83624237llu; }
-
-  static size_t mod105359939(size_t hash) { return hash % 105359939llu; }
-
-  static size_t mod132745199(size_t hash) { return hash % 132745199llu; }
-
-  static size_t mod167248483(size_t hash) { return hash % 167248483llu; }
-
-  static size_t mod210719881(size_t hash) { return hash % 210719881llu; }
-
-  static size_t mod265490441(size_t hash) { return hash % 265490441llu; }
-
-  static size_t mod334496971(size_t hash) { return hash % 334496971llu; }
-
-  static size_t mod421439783(size_t hash) { return hash % 421439783llu; }
-
-  static size_t mod530980861(size_t hash) { return hash % 530980861llu; }
-
-  static size_t mod668993977(size_t hash) { return hash % 668993977llu; }
-
-  static size_t mod842879579(size_t hash) { return hash % 842879579llu; }
-
-  static size_t mod1061961721(size_t hash) { return hash % 1061961721llu; }
-
-  static size_t mod1337987929(size_t hash) { return hash % 1337987929llu; }
-
-  static size_t mod1685759167(size_t hash) { return hash % 1685759167llu; }
-
-  static size_t mod2123923447(size_t hash) { return hash % 2123923447llu; }
-
-  static size_t mod2675975881(size_t hash) { return hash % 2675975881llu; }
-
-  static size_t mod3371518343(size_t hash) { return hash % 3371518343llu; }
-
-  static size_t mod4247846927(size_t hash) { return hash % 4247846927llu; }
-
-  static size_t mod5351951779(size_t hash) { return hash % 5351951779llu; }
-
-  static size_t mod6743036717(size_t hash) { return hash % 6743036717llu; }
-
-  static size_t mod8495693897(size_t hash) { return hash % 8495693897llu; }
-
-  static size_t mod10703903591(size_t hash) { return hash % 10703903591llu; }
-
-  static size_t mod13486073473(size_t hash) { return hash % 13486073473llu; }
-
-  static size_t mod16991387857(size_t hash) { return hash % 16991387857llu; }
-
-  static size_t mod21407807219(size_t hash) { return hash % 21407807219llu; }
-
-  static size_t mod26972146961(size_t hash) { return hash % 26972146961llu; }
-
-  static size_t mod33982775741(size_t hash) { return hash % 33982775741llu; }
-
-  static size_t mod42815614441(size_t hash) { return hash % 42815614441llu; }
-
-  static size_t mod53944293929(size_t hash) { return hash % 53944293929llu; }
-
-  static size_t mod67965551447(size_t hash) { return hash % 67965551447llu; }
-
-  static size_t mod85631228929(size_t hash) { return hash % 85631228929llu; }
-
-  static size_t mod107888587883(size_t hash) { return hash % 107888587883llu; }
-
-  static size_t mod135931102921(size_t hash) { return hash % 135931102921llu; }
-
-  static size_t mod171262457903(size_t hash) { return hash % 171262457903llu; }
-
-  static size_t mod215777175787(size_t hash) { return hash % 215777175787llu; }
-
-  static size_t mod271862205833(size_t hash) { return hash % 271862205833llu; }
-
-  static size_t mod342524915839(size_t hash) { return hash % 342524915839llu; }
-
-  static size_t mod431554351609(size_t hash) { return hash % 431554351609llu; }
-
-  static size_t mod543724411781(size_t hash) { return hash % 543724411781llu; }
-
-  static size_t mod685049831731(size_t hash) { return hash % 685049831731llu; }
-
-  static size_t mod863108703229(size_t hash) { return hash % 863108703229llu; }
-
-  static size_t mod1087448823553(size_t hash) { return hash % 1087448823553llu; }
-
-  static size_t mod1370099663459(size_t hash) { return hash % 1370099663459llu; }
-
-  static size_t mod1726217406467(size_t hash) { return hash % 1726217406467llu; }
-
-  static size_t mod2174897647073(size_t hash) { return hash % 2174897647073llu; }
-
-  static size_t mod2740199326961(size_t hash) { return hash % 2740199326961llu; }
-
-  static size_t mod3452434812973(size_t hash) { return hash % 3452434812973llu; }
-
-  static size_t mod4349795294267(size_t hash) { return hash % 4349795294267llu; }
-
-  static size_t mod5480398654009(size_t hash) { return hash % 5480398654009llu; }
-
-  static size_t mod6904869625999(size_t hash) { return hash % 6904869625999llu; }
-
-  static size_t mod8699590588571(size_t hash) { return hash % 8699590588571llu; }
-
-  static size_t mod10960797308051(size_t hash) { return hash % 10960797308051llu; }
-
-  static size_t mod13809739252051(size_t hash) { return hash % 13809739252051llu; }
-
-  static size_t mod17399181177241(size_t hash) { return hash % 17399181177241llu; }
-
-  static size_t mod21921594616111(size_t hash) { return hash % 21921594616111llu; }
-
-  static size_t mod27619478504183(size_t hash) { return hash % 27619478504183llu; }
-
-  static size_t mod34798362354533(size_t hash) { return hash % 34798362354533llu; }
-
-  static size_t mod43843189232363(size_t hash) { return hash % 43843189232363llu; }
-
-  static size_t mod55238957008387(size_t hash) { return hash % 55238957008387llu; }
-
-  static size_t mod69596724709081(size_t hash) { return hash % 69596724709081llu; }
-
-  static size_t mod87686378464759(size_t hash) { return hash % 87686378464759llu; }
-
-  static size_t mod110477914016779(size_t hash) { return hash % 110477914016779llu; }
-
-  static size_t mod139193449418173(size_t hash) { return hash % 139193449418173llu; }
-
-  static size_t mod175372756929481(size_t hash) { return hash % 175372756929481llu; }
-
-  static size_t mod220955828033581(size_t hash) { return hash % 220955828033581llu; }
-
-  static size_t mod278386898836457(size_t hash) { return hash % 278386898836457llu; }
-
-  static size_t mod350745513859007(size_t hash) { return hash % 350745513859007llu; }
-
-  static size_t mod441911656067171(size_t hash) { return hash % 441911656067171llu; }
-
-  static size_t mod556773797672909(size_t hash) { return hash % 556773797672909llu; }
-
-  static size_t mod701491027718027(size_t hash) { return hash % 701491027718027llu; }
-
-  static size_t mod883823312134381(size_t hash) { return hash % 883823312134381llu; }
-
-  static size_t mod1113547595345903(size_t hash) { return hash % 1113547595345903llu; }
-
-  static size_t mod1402982055436147(size_t hash) { return hash % 1402982055436147llu; }
-
-  static size_t mod1767646624268779(size_t hash) { return hash % 1767646624268779llu; }
-
-  static size_t mod2227095190691797(size_t hash) { return hash % 2227095190691797llu; }
-
-  static size_t mod2805964110872297(size_t hash) { return hash % 2805964110872297llu; }
-
-  static size_t mod3535293248537579(size_t hash) { return hash % 3535293248537579llu; }
-
-  static size_t mod4454190381383713(size_t hash) { return hash % 4454190381383713llu; }
-
-  static size_t mod5611928221744609(size_t hash) { return hash % 5611928221744609llu; }
-
-  static size_t mod7070586497075177(size_t hash) { return hash % 7070586497075177llu; }
-
-  static size_t mod8908380762767489(size_t hash) { return hash % 8908380762767489llu; }
-
-  static size_t mod11223856443489329(size_t hash) { return hash % 11223856443489329llu; }
-
-  static size_t mod14141172994150357(size_t hash) { return hash % 14141172994150357llu; }
-
-  static size_t mod17816761525534927(size_t hash) { return hash % 17816761525534927llu; }
-
-  static size_t mod22447712886978529(size_t hash) { return hash % 22447712886978529llu; }
-
-  static size_t mod28282345988300791(size_t hash) { return hash % 28282345988300791llu; }
-
-  static size_t mod35633523051069991(size_t hash) { return hash % 35633523051069991llu; }
-
-  static size_t mod44895425773957261(size_t hash) { return hash % 44895425773957261llu; }
-
-  static size_t mod56564691976601587(size_t hash) { return hash % 56564691976601587llu; }
-
-  static size_t mod71267046102139967(size_t hash) { return hash % 71267046102139967llu; }
-
-  static size_t mod89790851547914507(size_t hash) { return hash % 89790851547914507llu; }
-
-  static size_t mod113129383953203213(size_t hash) { return hash % 113129383953203213llu; }
-
-  static size_t mod142534092204280003(size_t hash) { return hash % 142534092204280003llu; }
-
-  static size_t mod179581703095829107(size_t hash) { return hash % 179581703095829107llu; }
-
-  static size_t mod226258767906406483(size_t hash) { return hash % 226258767906406483llu; }
-
-  static size_t mod285068184408560057(size_t hash) { return hash % 285068184408560057llu; }
-
-  static size_t mod359163406191658253(size_t hash) { return hash % 359163406191658253llu; }
-
-  static size_t mod452517535812813007(size_t hash) { return hash % 452517535812813007llu; }
-
-  static size_t mod570136368817120201(size_t hash) { return hash % 570136368817120201llu; }
-
-  static size_t mod718326812383316683(size_t hash) { return hash % 718326812383316683llu; }
-
-  static size_t mod905035071625626043(size_t hash) { return hash % 905035071625626043llu; }
-
-  static size_t mod1140272737634240411(size_t hash) { return hash % 1140272737634240411llu; }
-
-  static size_t mod1436653624766633509(size_t hash) { return hash % 1436653624766633509llu; }
-
-  static size_t mod1810070143251252131(size_t hash) { return hash % 1810070143251252131llu; }
-
-  static size_t mod2280545475268481167(size_t hash) { return hash % 2280545475268481167llu; }
-
-  static size_t mod2873307249533267101(size_t hash) { return hash % 2873307249533267101llu; }
-
-  static size_t mod3620140286502504283(size_t hash) { return hash % 3620140286502504283llu; }
-
-  static size_t mod4561090950536962147(size_t hash) { return hash % 4561090950536962147llu; }
-
-  static size_t mod5746614499066534157(size_t hash) { return hash % 5746614499066534157llu; }
-
-  static size_t mod7240280573005008577(size_t hash) { return hash % 7240280573005008577llu; }
-
-  static size_t mod9122181901073924329(size_t hash) { return hash % 9122181901073924329llu; }
-
-  static size_t mod11493228998133068689(size_t hash) { return hash % 11493228998133068689llu; }
-
-  static size_t mod14480561146010017169(size_t hash) { return hash % 14480561146010017169llu; }
-
-  static size_t mod18446744073709551557(size_t hash) { return hash % 18446744073709551557llu; }
-
-  using mod_function = size_t (*)(size_t);
-
-  mod_function next_size_over(size_t &size) const {
-    // prime numbers generated by the following method:
-    // 1. start with a prime p = 2
-    // 2. go to wolfram alpha and get p = NextPrime(2 * p)
-    // 3. repeat 2. until you overflow 64 bits
-    // you now have large gaps which you would hit if somebody called reserve() with an unlucky number.
-    // 4. to fill the gaps for every prime p go to wolfram alpha and get ClosestPrime(p * 2^(1/3)) and ClosestPrime(p *
-    // 2^(2/3)) and put those in the gaps
-    // 5. get PrevPrime(2^64) and put it at the end
-    static constexpr const size_t prime_list[]               = {2llu,
-                                                                3llu,
-                                                                5llu,
-                                                                7llu,
-                                                                11llu,
-                                                                13llu,
-                                                                17llu,
-                                                                23llu,
-                                                                29llu,
-                                                                37llu,
-                                                                47llu,
-                                                                59llu,
-                                                                73llu,
-                                                                97llu,
-                                                                127llu,
-                                                                151llu,
-                                                                197llu,
-                                                                251llu,
-                                                                313llu,
-                                                                397llu,
-                                                                499llu,
-                                                                631llu,
-                                                                797llu,
-                                                                1009llu,
-                                                                1259llu,
-                                                                1597llu,
-                                                                2011llu,
-                                                                2539llu,
-                                                                3203llu,
-                                                                4027llu,
-                                                                5087llu,
-                                                                6421llu,
-                                                                8089llu,
-                                                                10193llu,
-                                                                12853llu,
-                                                                16193llu,
-                                                                20399llu,
-                                                                25717llu,
-                                                                32401llu,
-                                                                40823llu,
-                                                                51437llu,
-                                                                64811llu,
-                                                                81649llu,
-                                                                102877llu,
-                                                                129607llu,
-                                                                163307llu,
-                                                                205759llu,
-                                                                259229llu,
-                                                                326617llu,
-                                                                411527llu,
-                                                                518509llu,
-                                                                653267llu,
-                                                                823117llu,
-                                                                1037059llu,
-                                                                1306601llu,
-                                                                1646237llu,
-                                                                2074129llu,
-                                                                2613229llu,
-                                                                3292489llu,
-                                                                4148279llu,
-                                                                5226491llu,
-                                                                6584983llu,
-                                                                8296553llu,
-                                                                10453007llu,
-                                                                13169977llu,
-                                                                16593127llu,
-                                                                20906033llu,
-                                                                26339969llu,
-                                                                33186281llu,
-                                                                41812097llu,
-                                                                52679969llu,
-                                                                66372617llu,
-                                                                83624237llu,
-                                                                105359939llu,
-                                                                132745199llu,
-                                                                167248483llu,
-                                                                210719881llu,
-                                                                265490441llu,
-                                                                334496971llu,
-                                                                421439783llu,
-                                                                530980861llu,
-                                                                668993977llu,
-                                                                842879579llu,
-                                                                1061961721llu,
-                                                                1337987929llu,
-                                                                1685759167llu,
-                                                                2123923447llu,
-                                                                2675975881llu,
-                                                                3371518343llu,
-                                                                4247846927llu,
-                                                                5351951779llu,
-                                                                6743036717llu,
-                                                                8495693897llu,
-                                                                10703903591llu,
-                                                                13486073473llu,
-                                                                16991387857llu,
-                                                                21407807219llu,
-                                                                26972146961llu,
-                                                                33982775741llu,
-                                                                42815614441llu,
-                                                                53944293929llu,
-                                                                67965551447llu,
-                                                                85631228929llu,
-                                                                107888587883llu,
-                                                                135931102921llu,
-                                                                171262457903llu,
-                                                                215777175787llu,
-                                                                271862205833llu,
-                                                                342524915839llu,
-                                                                431554351609llu,
-                                                                543724411781llu,
-                                                                685049831731llu,
-                                                                863108703229llu,
-                                                                1087448823553llu,
-                                                                1370099663459llu,
-                                                                1726217406467llu,
-                                                                2174897647073llu,
-                                                                2740199326961llu,
-                                                                3452434812973llu,
-                                                                4349795294267llu,
-                                                                5480398654009llu,
-                                                                6904869625999llu,
-                                                                8699590588571llu,
-                                                                10960797308051llu,
-                                                                13809739252051llu,
-                                                                17399181177241llu,
-                                                                21921594616111llu,
-                                                                27619478504183llu,
-                                                                34798362354533llu,
-                                                                43843189232363llu,
-                                                                55238957008387llu,
-                                                                69596724709081llu,
-                                                                87686378464759llu,
-                                                                110477914016779llu,
-                                                                139193449418173llu,
-                                                                175372756929481llu,
-                                                                220955828033581llu,
-                                                                278386898836457llu,
-                                                                350745513859007llu,
-                                                                441911656067171llu,
-                                                                556773797672909llu,
-                                                                701491027718027llu,
-                                                                883823312134381llu,
-                                                                1113547595345903llu,
-                                                                1402982055436147llu,
-                                                                1767646624268779llu,
-                                                                2227095190691797llu,
-                                                                2805964110872297llu,
-                                                                3535293248537579llu,
-                                                                4454190381383713llu,
-                                                                5611928221744609llu,
-                                                                7070586497075177llu,
-                                                                8908380762767489llu,
-                                                                11223856443489329llu,
-                                                                14141172994150357llu,
-                                                                17816761525534927llu,
-                                                                22447712886978529llu,
-                                                                28282345988300791llu,
-                                                                35633523051069991llu,
-                                                                44895425773957261llu,
-                                                                56564691976601587llu,
-                                                                71267046102139967llu,
-                                                                89790851547914507llu,
-                                                                113129383953203213llu,
-                                                                142534092204280003llu,
-                                                                179581703095829107llu,
-                                                                226258767906406483llu,
-                                                                285068184408560057llu,
-                                                                359163406191658253llu,
-                                                                452517535812813007llu,
-                                                                570136368817120201llu,
-                                                                718326812383316683llu,
-                                                                905035071625626043llu,
-                                                                1140272737634240411llu,
-                                                                1436653624766633509llu,
-                                                                1810070143251252131llu,
-                                                                2280545475268481167llu,
-                                                                2873307249533267101llu,
-                                                                3620140286502504283llu,
-                                                                4561090950536962147llu,
-                                                                5746614499066534157llu,
-                                                                7240280573005008577llu,
-                                                                9122181901073924329llu,
-                                                                11493228998133068689llu,
-                                                                14480561146010017169llu,
-                                                                18446744073709551557llu};
-    static constexpr size_t (*const mod_functions[])(size_t) = {&mod0,
-                                                                &mod2,
-                                                                &mod3,
-                                                                &mod5,
-                                                                &mod7,
-                                                                &mod11,
-                                                                &mod13,
-                                                                &mod17,
-                                                                &mod23,
-                                                                &mod29,
-                                                                &mod37,
-                                                                &mod47,
-                                                                &mod59,
-                                                                &mod73,
-                                                                &mod97,
-                                                                &mod127,
-                                                                &mod151,
-                                                                &mod197,
-                                                                &mod251,
-                                                                &mod313,
-                                                                &mod397,
-                                                                &mod499,
-                                                                &mod631,
-                                                                &mod797,
-                                                                &mod1009,
-                                                                &mod1259,
-                                                                &mod1597,
-                                                                &mod2011,
-                                                                &mod2539,
-                                                                &mod3203,
-                                                                &mod4027,
-                                                                &mod5087,
-                                                                &mod6421,
-                                                                &mod8089,
-                                                                &mod10193,
-                                                                &mod12853,
-                                                                &mod16193,
-                                                                &mod20399,
-                                                                &mod25717,
-                                                                &mod32401,
-                                                                &mod40823,
-                                                                &mod51437,
-                                                                &mod64811,
-                                                                &mod81649,
-                                                                &mod102877,
-                                                                &mod129607,
-                                                                &mod163307,
-                                                                &mod205759,
-                                                                &mod259229,
-                                                                &mod326617,
-                                                                &mod411527,
-                                                                &mod518509,
-                                                                &mod653267,
-                                                                &mod823117,
-                                                                &mod1037059,
-                                                                &mod1306601,
-                                                                &mod1646237,
-                                                                &mod2074129,
-                                                                &mod2613229,
-                                                                &mod3292489,
-                                                                &mod4148279,
-                                                                &mod5226491,
-                                                                &mod6584983,
-                                                                &mod8296553,
-                                                                &mod10453007,
-                                                                &mod13169977,
-                                                                &mod16593127,
-                                                                &mod20906033,
-                                                                &mod26339969,
-                                                                &mod33186281,
-                                                                &mod41812097,
-                                                                &mod52679969,
-                                                                &mod66372617,
-                                                                &mod83624237,
-                                                                &mod105359939,
-                                                                &mod132745199,
-                                                                &mod167248483,
-                                                                &mod210719881,
-                                                                &mod265490441,
-                                                                &mod334496971,
-                                                                &mod421439783,
-                                                                &mod530980861,
-                                                                &mod668993977,
-                                                                &mod842879579,
-                                                                &mod1061961721,
-                                                                &mod1337987929,
-                                                                &mod1685759167,
-                                                                &mod2123923447,
-                                                                &mod2675975881,
-                                                                &mod3371518343,
-                                                                &mod4247846927,
-                                                                &mod5351951779,
-                                                                &mod6743036717,
-                                                                &mod8495693897,
-                                                                &mod10703903591,
-                                                                &mod13486073473,
-                                                                &mod16991387857,
-                                                                &mod21407807219,
-                                                                &mod26972146961,
-                                                                &mod33982775741,
-                                                                &mod42815614441,
-                                                                &mod53944293929,
-                                                                &mod67965551447,
-                                                                &mod85631228929,
-                                                                &mod107888587883,
-                                                                &mod135931102921,
-                                                                &mod171262457903,
-                                                                &mod215777175787,
-                                                                &mod271862205833,
-                                                                &mod342524915839,
-                                                                &mod431554351609,
-                                                                &mod543724411781,
-                                                                &mod685049831731,
-                                                                &mod863108703229,
-                                                                &mod1087448823553,
-                                                                &mod1370099663459,
-                                                                &mod1726217406467,
-                                                                &mod2174897647073,
-                                                                &mod2740199326961,
-                                                                &mod3452434812973,
-                                                                &mod4349795294267,
-                                                                &mod5480398654009,
-                                                                &mod6904869625999,
-                                                                &mod8699590588571,
-                                                                &mod10960797308051,
-                                                                &mod13809739252051,
-                                                                &mod17399181177241,
-                                                                &mod21921594616111,
-                                                                &mod27619478504183,
-                                                                &mod34798362354533,
-                                                                &mod43843189232363,
-                                                                &mod55238957008387,
-                                                                &mod69596724709081,
-                                                                &mod87686378464759,
-                                                                &mod110477914016779,
-                                                                &mod139193449418173,
-                                                                &mod175372756929481,
-                                                                &mod220955828033581,
-                                                                &mod278386898836457,
-                                                                &mod350745513859007,
-                                                                &mod441911656067171,
-                                                                &mod556773797672909,
-                                                                &mod701491027718027,
-                                                                &mod883823312134381,
-                                                                &mod1113547595345903,
-                                                                &mod1402982055436147,
-                                                                &mod1767646624268779,
-                                                                &mod2227095190691797,
-                                                                &mod2805964110872297,
-                                                                &mod3535293248537579,
-                                                                &mod4454190381383713,
-                                                                &mod5611928221744609,
-                                                                &mod7070586497075177,
-                                                                &mod8908380762767489,
-                                                                &mod11223856443489329,
-                                                                &mod14141172994150357,
-                                                                &mod17816761525534927,
-                                                                &mod22447712886978529,
-                                                                &mod28282345988300791,
-                                                                &mod35633523051069991,
-                                                                &mod44895425773957261,
-                                                                &mod56564691976601587,
-                                                                &mod71267046102139967,
-                                                                &mod89790851547914507,
-                                                                &mod113129383953203213,
-                                                                &mod142534092204280003,
-                                                                &mod179581703095829107,
-                                                                &mod226258767906406483,
-                                                                &mod285068184408560057,
-                                                                &mod359163406191658253,
-                                                                &mod452517535812813007,
-                                                                &mod570136368817120201,
-                                                                &mod718326812383316683,
-                                                                &mod905035071625626043,
-                                                                &mod1140272737634240411,
-                                                                &mod1436653624766633509,
-                                                                &mod1810070143251252131,
-                                                                &mod2280545475268481167,
-                                                                &mod2873307249533267101,
-                                                                &mod3620140286502504283,
-                                                                &mod4561090950536962147,
-                                                                &mod5746614499066534157,
-                                                                &mod7240280573005008577,
-                                                                &mod9122181901073924329,
-                                                                &mod11493228998133068689,
-                                                                &mod14480561146010017169,
-                                                                &mod18446744073709551557};
-    const size_t *found = std::lower_bound(std::begin(prime_list), std::end(prime_list) - 1, size);
-    size                = *found;
-    return mod_functions[1 + found - prime_list];
+    if (dist_and_fingerprint != at(m_buckets, bucket_idx).m_dist_and_fingerprint) { return 0; }
+    do_erase(bucket_idx, handle_erased_value);
+    return 1;
   }
 
-  void commit(mod_function new_mod_function) { current_mod_function = new_mod_function; }
-
-  void reset() { current_mod_function = &mod0; }
-
-  size_t index_for_hash(size_t hash, size_t /*num_slots_minus_one*/) const { return current_mod_function(hash); }
-
-  size_t keep_in_range(size_t index, size_t num_slots_minus_one) const {
-    return index > num_slots_minus_one ? current_mod_function(index) : index;
+  template <class K, class M>
+  auto do_insert_or_assign(K &&key, M &&mapped) -> std::pair<iterator, bool> {
+    auto it_isinserted = try_emplace(std::forward<K>(key), std::forward<M>(mapped));
+    if (!it_isinserted.second) { it_isinserted.first->second = std::forward<M>(mapped); }
+    return it_isinserted;
   }
-
- private:
-  mod_function current_mod_function = &mod0;
-};
-
-struct power_of_two_hash_policy {
-  size_t index_for_hash(size_t hash, size_t num_slots_minus_one) const { return hash & num_slots_minus_one; }
-
-  size_t keep_in_range(size_t index, size_t num_slots_minus_one) const {
-    return index_for_hash(index, num_slots_minus_one);
-  }
-
-  int8_t next_size_over(size_t &size) const {
-    size = detailv3::next_power_of_two(size);
-    return 0;
-  }
-
-  void commit(int8_t) {}
-
-  void reset() {}
-};
-
-struct fibonacci_hash_policy {
-  size_t index_for_hash(size_t hash, size_t /*num_slots_minus_one*/) const {
-    return (11400714819323198485ull * hash) >> shift;
-  }
-
-  size_t keep_in_range(size_t index, size_t num_slots_minus_one) const { return index & num_slots_minus_one; }
-
-  int8_t next_size_over(size_t &size) const {
-    size = std::max(size_t(2), detailv3::next_power_of_two(size));
-    return 64 - detailv3::log2(size);
-  }
-
-  void commit(int8_t shift) { this->shift = shift; }
-
-  void reset() { shift = 63; }
-
- private:
-  int8_t shift = 63;
-};
-
-template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>,
-          typename A = std::allocator<std::pair<K, V>>>
-class flat_hash_map
-    : public detailv3::sherwood_v3_table<
-        std::pair<K, V>, K, H, detailv3::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-        detailv3::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
-        typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<std::pair<K, V>>>> {
-  using Table = detailv3::sherwood_v3_table<
-    std::pair<K, V>, K, H, detailv3::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-    detailv3::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
-    typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<std::pair<K, V>>>>;
-
- public:
-  using key_type    = K;
-  using mapped_type = V;
-
-  using Table::Table;
-
-  flat_hash_map() {}
-
-  inline V &operator[](const K &key) { return emplace(key, convertible_to_value()).first->second; }
-
-  inline V &operator[](K &&key) { return emplace(std::move(key), convertible_to_value()).first->second; }
-
-  V &at(const K &key) {
-    auto found = this->find(key);
-    if (found == this->end()) throw std::out_of_range("Argument passed to at() was not in the map.");
-    return found->second;
-  }
-
-  const V &at(const K &key) const {
-    auto found = this->find(key);
-    if (found == this->end()) throw std::out_of_range("Argument passed to at() was not in the map.");
-    return found->second;
-  }
-
-  using Table::emplace;
-
-  std::pair<typename Table::iterator, bool> emplace() { return emplace(key_type(), convertible_to_value()); }
-
-  template <typename M>
-  std::pair<typename Table::iterator, bool> insert_or_assign(const key_type &key, M &&m) {
-    auto emplace_result = emplace(key, std::forward<M>(m));
-    if (!emplace_result.second) emplace_result.first->second = std::forward<M>(m);
-    return emplace_result;
-  }
-
-  template <typename M>
-  std::pair<typename Table::iterator, bool> insert_or_assign(key_type &&key, M &&m) {
-    auto emplace_result = emplace(std::move(key), std::forward<M>(m));
-    if (!emplace_result.second) emplace_result.first->second = std::forward<M>(m);
-    return emplace_result;
-  }
-
-  template <typename M>
-  typename Table::iterator insert_or_assign(typename Table::const_iterator, const key_type &key, M &&m) {
-    return insert_or_assign(key, std::forward<M>(m)).first;
-  }
-
-  template <typename M>
-  typename Table::iterator insert_or_assign(typename Table::const_iterator, key_type &&key, M &&m) {
-    return insert_or_assign(std::move(key), std::forward<M>(m)).first;
-  }
-
-  friend bool operator==(const flat_hash_map &lhs, const flat_hash_map &rhs) {
-    if (lhs.size() != rhs.size()) return false;
-    for (const typename Table::value_type &value : lhs) {
-      auto found = rhs.find(value.first);
-      if (found == rhs.end())
-        return false;
-      else if (value.second != found->second)
-        return false;
-    }
-    return true;
-  }
-
-  friend bool operator!=(const flat_hash_map &lhs, const flat_hash_map &rhs) { return !(lhs == rhs); }
-
- private:
-  struct convertible_to_value {
-    operator V() const { return V(); }
-  };
-};
-
-template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T>>
-class flat_hash_set : public detailv3::sherwood_v3_table<
-                        T, T, H, detailv3::functor_storage<size_t, H>, E, detailv3::functor_storage<bool, E>, A,
-                        typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<T>>> {
-  using Table = detailv3::sherwood_v3_table<
-    T, T, H, detailv3::functor_storage<size_t, H>, E, detailv3::functor_storage<bool, E>, A,
-    typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<T>>>;
-
- public:
-  using key_type = T;
-
-  using Table::Table;
-
-  flat_hash_set() {}
 
   template <typename... Args>
-  std::pair<typename Table::iterator, bool> emplace(Args &&...args) {
-    return Table::emplace(T(std::forward<Args>(args)...));
+  auto do_place_element(dist_and_fingerprint_type dist_and_fingerprint, value_idx_type bucket_idx, Args &&...args)
+    -> std::pair<iterator, bool> {
+    // emplace the new value. If that throws an exception, no harm done; index is still in a valid state
+    m_values.emplace_back(std::forward<Args>(args)...);
+
+    auto value_idx = static_cast<value_idx_type>(m_values.size() - 1);
+    if (ANKERL_UNORDERED_DENSE_UNLIKELY(is_full())) ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR {
+        increase_size();
+      }
+    else { place_and_shift_up({dist_and_fingerprint, value_idx}, bucket_idx); }
+
+    // place element and shift up until we find an empty spot
+    return {begin() + static_cast<difference_type>(value_idx), true};
   }
 
-  std::pair<typename Table::iterator, bool> emplace(const key_type &arg) { return Table::emplace(arg); }
+  template <typename K, typename... Args>
+  auto do_try_emplace(K &&key, Args &&...args) -> std::pair<iterator, bool> {
+    auto hash                 = mixed_hash(key);
+    auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
+    auto bucket_idx           = bucket_idx_from_hash(hash);
 
-  std::pair<typename Table::iterator, bool> emplace(key_type &arg) { return Table::emplace(arg); }
+    while (true) {
+      auto *bucket = &at(m_buckets, bucket_idx);
+      if (dist_and_fingerprint == bucket->m_dist_and_fingerprint) {
+        if (m_equal(key, get_key(m_values[bucket->m_value_idx]))) {
+          return {begin() + static_cast<difference_type>(bucket->m_value_idx), false};
+        }
+      } else if (dist_and_fingerprint > bucket->m_dist_and_fingerprint) {
+        return do_place_element(dist_and_fingerprint, bucket_idx, std::piecewise_construct,
+                                std::forward_as_tuple(std::forward<K>(key)),
+                                std::forward_as_tuple(std::forward<Args>(args)...));
+      }
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
+    }
+  }
 
-  std::pair<typename Table::iterator, bool> emplace(const key_type &&arg) { return Table::emplace(std::move(arg)); }
+  template <typename K>
+  auto do_find(K const &key) -> iterator {
+    if (ANKERL_UNORDERED_DENSE_UNLIKELY(empty())) ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR {
+        return end();
+      }
 
-  std::pair<typename Table::iterator, bool> emplace(key_type &&arg) { return Table::emplace(std::move(arg)); }
+    auto mh                   = mixed_hash(key);
+    auto dist_and_fingerprint = dist_and_fingerprint_from_hash(mh);
+    auto bucket_idx           = bucket_idx_from_hash(mh);
+    auto *bucket              = &at(m_buckets, bucket_idx);
 
-  friend bool operator==(const flat_hash_set &lhs, const flat_hash_set &rhs) {
-    if (lhs.size() != rhs.size()) return false;
-    for (const T &value : lhs) {
-      if (rhs.find(value) == rhs.end()) return false;
+    // unrolled loop. *Always* check a few directly, then enter the loop. This is faster.
+    if (dist_and_fingerprint == bucket->m_dist_and_fingerprint &&
+        m_equal(key, get_key(m_values[bucket->m_value_idx]))) {
+      return begin() + static_cast<difference_type>(bucket->m_value_idx);
+    }
+    dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+    bucket_idx           = next(bucket_idx);
+    bucket               = &at(m_buckets, bucket_idx);
+
+    if (dist_and_fingerprint == bucket->m_dist_and_fingerprint &&
+        m_equal(key, get_key(m_values[bucket->m_value_idx]))) {
+      return begin() + static_cast<difference_type>(bucket->m_value_idx);
+    }
+    dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+    bucket_idx           = next(bucket_idx);
+    bucket               = &at(m_buckets, bucket_idx);
+
+    while (true) {
+      if (dist_and_fingerprint == bucket->m_dist_and_fingerprint) {
+        if (m_equal(key, get_key(m_values[bucket->m_value_idx]))) {
+          return begin() + static_cast<difference_type>(bucket->m_value_idx);
+        }
+      } else if (dist_and_fingerprint > bucket->m_dist_and_fingerprint) {
+        return end();
+      }
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
+      bucket               = &at(m_buckets, bucket_idx);
+    }
+  }
+
+  template <typename K>
+  auto do_find(K const &key) const -> const_iterator {
+    return const_cast<table *>(this)->do_find(key);  // NOLINT(cppcoreguidelines-pro-type-const-cast)
+  }
+
+  template <typename K, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto do_at(K const &key) -> Q & {
+    if (auto it = find(key); ANKERL_UNORDERED_DENSE_LIKELY(end() != it)) ANKERL_UNORDERED_DENSE_LIKELY_ATTR {
+        return it->second;
+      }
+    on_error_key_not_found();
+  }
+
+  template <typename K, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto do_at(K const &key) const -> Q const & {
+    return const_cast<table *>(this)->at(key);  // NOLINT(cppcoreguidelines-pro-type-const-cast)
+  }
+
+ public:
+  explicit table(std::size_t bucket_count, Hash const &hash = Hash(), KeyEqual const &equal = KeyEqual(),
+                 allocator_type const &alloc_or_container = allocator_type())
+      : m_values(alloc_or_container), m_buckets(alloc_or_container), m_hash(hash), m_equal(equal) {
+    if (0 != bucket_count) {
+      reserve(bucket_count);
+    } else {
+      allocate_buckets_from_shift();
+      clear_buckets();
+    }
+  }
+
+  table() : table(0) {}
+
+  table(std::size_t bucket_count, allocator_type const &alloc) : table(bucket_count, Hash(), KeyEqual(), alloc) {}
+
+  table(std::size_t bucket_count, Hash const &hash, allocator_type const &alloc)
+      : table(bucket_count, hash, KeyEqual(), alloc) {}
+
+  explicit table(allocator_type const &alloc) : table(0, Hash(), KeyEqual(), alloc) {}
+
+  template <class InputIt>
+  table(InputIt first, InputIt last, size_type bucket_count = 0, Hash const &hash = Hash(),
+        KeyEqual const &equal = KeyEqual(), allocator_type const &alloc = allocator_type())
+      : table(bucket_count, hash, equal, alloc) {
+    insert(first, last);
+  }
+
+  template <class InputIt>
+  table(InputIt first, InputIt last, size_type bucket_count, allocator_type const &alloc)
+      : table(first, last, bucket_count, Hash(), KeyEqual(), alloc) {}
+
+  template <class InputIt>
+  table(InputIt first, InputIt last, size_type bucket_count, Hash const &hash, allocator_type const &alloc)
+      : table(first, last, bucket_count, hash, KeyEqual(), alloc) {}
+
+  table(table const &other) : table(other, other.m_values.get_allocator()) {}
+
+  table(table const &other, allocator_type const &alloc)
+      : m_values(other.m_values, alloc),
+        m_max_load_factor(other.m_max_load_factor),
+        m_hash(other.m_hash),
+        m_equal(other.m_equal) {
+    copy_buckets(other);
+  }
+
+  table(table &&other) noexcept : table(std::move(other), other.m_values.get_allocator()) {}
+
+  table(table &&other, allocator_type const &alloc) noexcept : m_values(alloc) { *this = std::move(other); }
+
+  table(std::initializer_list<value_type> ilist, std::size_t bucket_count = 0, Hash const &hash = Hash(),
+        KeyEqual const &equal = KeyEqual(), allocator_type const &alloc = allocator_type())
+      : table(bucket_count, hash, equal, alloc) {
+    insert(ilist);
+  }
+
+  table(std::initializer_list<value_type> ilist, size_type bucket_count, allocator_type const &alloc)
+      : table(ilist, bucket_count, Hash(), KeyEqual(), alloc) {}
+
+  table(std::initializer_list<value_type> init, size_type bucket_count, Hash const &hash, allocator_type const &alloc)
+      : table(init, bucket_count, hash, KeyEqual(), alloc) {}
+
+  ~table() = default;
+
+  auto operator=(table const &other) -> table & {
+    if (&other != this) {
+      deallocate_buckets();  // deallocate before m_values is set (might have another allocator)
+      m_values          = other.m_values;
+      m_max_load_factor = other.m_max_load_factor;
+      m_hash            = other.m_hash;
+      m_equal           = other.m_equal;
+      m_shifts          = initial_shifts;
+      copy_buckets(other);
+    }
+    return *this;
+  }
+
+  auto operator=(table &&other) noexcept(noexcept(std::is_nothrow_move_assignable_v<value_container_type> &&
+                                                  std::is_nothrow_move_assignable_v<Hash> &&
+                                                  std::is_nothrow_move_assignable_v<KeyEqual>)) -> table & {
+    if (&other != this) {
+      deallocate_buckets();  // deallocate before m_values is set (might have another allocator)
+      m_values = std::move(other.m_values);
+      other.m_values.clear();
+
+      // we can only reuse m_buckets when both maps have the same allocator!
+      if (get_allocator() == other.get_allocator()) {
+        m_buckets = std::move(other.m_buckets);
+        other.m_buckets.clear();
+        m_max_bucket_capacity = std::exchange(other.m_max_bucket_capacity, 0);
+        m_shifts              = std::exchange(other.m_shifts, initial_shifts);
+        m_max_load_factor     = std::exchange(other.m_max_load_factor, default_max_load_factor);
+        m_hash                = std::exchange(other.m_hash, {});
+        m_equal               = std::exchange(other.m_equal, {});
+        other.allocate_buckets_from_shift();
+        other.clear_buckets();
+      } else {
+        // set max_load_factor *before* copying the other's buckets, so we have the same
+        // behavior
+        m_max_load_factor = other.m_max_load_factor;
+
+        // copy_buckets sets m_buckets, m_num_buckets, m_max_bucket_capacity, m_shifts
+        copy_buckets(other);
+        // clear's the other's buckets so other is now already usable.
+        other.clear_buckets();
+        m_hash  = other.m_hash;
+        m_equal = other.m_equal;
+      }
+      // map "other" is now already usable, it's empty.
+    }
+    return *this;
+  }
+
+  auto operator=(std::initializer_list<value_type> ilist) -> table & {
+    clear();
+    insert(ilist);
+    return *this;
+  }
+
+  auto get_allocator() const noexcept -> allocator_type { return m_values.get_allocator(); }
+
+  // iterators //////////////////////////////////////////////////////////////
+
+  auto begin() noexcept -> iterator { return m_values.begin(); }
+
+  auto begin() const noexcept -> const_iterator { return m_values.begin(); }
+
+  auto cbegin() const noexcept -> const_iterator { return m_values.cbegin(); }
+
+  auto end() noexcept -> iterator { return m_values.end(); }
+
+  auto cend() const noexcept -> const_iterator { return m_values.cend(); }
+
+  auto end() const noexcept -> const_iterator { return m_values.end(); }
+
+  // capacity ///////////////////////////////////////////////////////////////
+
+  [[nodiscard]] auto empty() const noexcept -> bool { return m_values.empty(); }
+
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return m_values.size(); }
+
+  [[nodiscard]] static constexpr auto max_size() noexcept -> std::size_t {
+    if constexpr ((std::numeric_limits<value_idx_type>::max)() == (std::numeric_limits<std::size_t>::max)()) {
+      return std::size_t{1} << (sizeof(value_idx_type) * 8 - 1);
+    } else {
+      return std::size_t{1} << (sizeof(value_idx_type) * 8);
+    }
+  }
+
+  // modifiers //////////////////////////////////////////////////////////////
+
+  void clear() {
+    m_values.clear();
+    clear_buckets();
+  }
+
+  auto insert(value_type const &value) -> std::pair<iterator, bool> { return emplace(value); }
+
+  auto insert(value_type &&value) -> std::pair<iterator, bool> { return emplace(std::move(value)); }
+
+  template <class P, std::enable_if_t<std::is_constructible_v<value_type, P &&>, bool> = true>
+  auto insert(P &&value) -> std::pair<iterator, bool> {
+    return emplace(std::forward<P>(value));
+  }
+
+  auto insert(const_iterator /*hint*/, value_type const &value) -> iterator { return insert(value).first; }
+
+  auto insert(const_iterator /*hint*/, value_type &&value) -> iterator { return insert(std::move(value)).first; }
+
+  template <class P, std::enable_if_t<std::is_constructible_v<value_type, P &&>, bool> = true>
+  auto insert(const_iterator /*hint*/, P &&value) -> iterator {
+    return insert(std::forward<P>(value)).first;
+  }
+
+  template <class InputIt>
+  void insert(InputIt first, InputIt last) {
+    while (first != last) {
+      insert(*first);
+      ++first;
+    }
+  }
+
+  void insert(std::initializer_list<value_type> ilist) { insert(ilist.begin(), ilist.end()); }
+
+  // nonstandard API: *this is emptied.
+  // Also see "A Standard flat_map" https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p0429r9.pdf
+  auto extract() && -> value_container_type { return std::move(m_values); }
+
+  // nonstandard API:
+  // Discards the internally held container and replaces it with the one passed. Erases non-unique elements.
+  auto replace(value_container_type &&container) {
+    if (ANKERL_UNORDERED_DENSE_UNLIKELY(container.size() > max_size())) ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR {
+        on_error_too_many_elements();
+      }
+    auto shifts = calc_shifts_for_size(container.size());
+    if (0 == bucket_count() || shifts < m_shifts || container.get_allocator() != m_values.get_allocator()) {
+      m_shifts = shifts;
+      deallocate_buckets();
+      allocate_buckets_from_shift();
+    }
+    clear_buckets();
+
+    m_values = std::move(container);
+
+    // can't use clear_and_fill_buckets_from_values() because container elements might not be unique
+    auto value_idx = value_idx_type{};
+
+    // loop until we reach the end of the container. duplicated entries will be replaced with back().
+    while (value_idx != static_cast<value_idx_type>(m_values.size())) {
+      auto const &key = get_key(m_values[value_idx]);
+
+      auto hash                 = mixed_hash(key);
+      auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
+      auto bucket_idx           = bucket_idx_from_hash(hash);
+
+      bool key_found = false;
+      while (true) {
+        auto const &bucket = at(m_buckets, bucket_idx);
+        if (dist_and_fingerprint > bucket.m_dist_and_fingerprint) { break; }
+        if (dist_and_fingerprint == bucket.m_dist_and_fingerprint &&
+            m_equal(key, get_key(m_values[bucket.m_value_idx]))) {
+          key_found = true;
+          break;
+        }
+        dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+        bucket_idx           = next(bucket_idx);
+      }
+
+      if (key_found) {
+        if (value_idx != static_cast<value_idx_type>(m_values.size() - 1)) {
+          m_values[value_idx] = std::move(m_values.back());
+        }
+        m_values.pop_back();
+      } else {
+        place_and_shift_up({dist_and_fingerprint, value_idx}, bucket_idx);
+        ++value_idx;
+      }
+    }
+  }
+
+  template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto insert_or_assign(Key const &key, M &&mapped) -> std::pair<iterator, bool> {
+    return do_insert_or_assign(key, std::forward<M>(mapped));
+  }
+
+  template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto insert_or_assign(Key &&key, M &&mapped) -> std::pair<iterator, bool> {
+    return do_insert_or_assign(std::move(key), std::forward<M>(mapped));
+  }
+
+  template <typename K, typename M, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+            std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
+  auto insert_or_assign(K &&key, M &&mapped) -> std::pair<iterator, bool> {
+    return do_insert_or_assign(std::forward<K>(key), std::forward<M>(mapped));
+  }
+
+  template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto insert_or_assign(const_iterator /*hint*/, Key const &key, M &&mapped) -> iterator {
+    return do_insert_or_assign(key, std::forward<M>(mapped)).first;
+  }
+
+  template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto insert_or_assign(const_iterator /*hint*/, Key &&key, M &&mapped) -> iterator {
+    return do_insert_or_assign(std::move(key), std::forward<M>(mapped)).first;
+  }
+
+  template <typename K, typename M, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+            std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
+  auto insert_or_assign(const_iterator /*hint*/, K &&key, M &&mapped) -> iterator {
+    return do_insert_or_assign(std::forward<K>(key), std::forward<M>(mapped)).first;
+  }
+
+  // Single arguments for unordered_set can be used without having to construct the value_type
+  template <class K, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+            std::enable_if_t<!is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
+  auto emplace(K &&key) -> std::pair<iterator, bool> {
+    auto hash                 = mixed_hash(key);
+    auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
+    auto bucket_idx           = bucket_idx_from_hash(hash);
+
+    while (dist_and_fingerprint <= at(m_buckets, bucket_idx).m_dist_and_fingerprint) {
+      if (dist_and_fingerprint == at(m_buckets, bucket_idx).m_dist_and_fingerprint &&
+          m_equal(key, m_values[at(m_buckets, bucket_idx).m_value_idx])) {
+        // found it, return without ever actually creating anything
+        return {begin() + static_cast<difference_type>(at(m_buckets, bucket_idx).m_value_idx), false};
+      }
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
+    }
+
+    // value is new, insert element first, so when exception happens we are in a valid state
+    return do_place_element(dist_and_fingerprint, bucket_idx, std::forward<K>(key));
+  }
+
+  template <class... Args>
+  auto emplace(Args &&...args) -> std::pair<iterator, bool> {
+    // we have to instantiate the value_type to be able to access the key.
+    // 1. emplace_back the object so it is constructed. 2. If the key is already there, pop it later in the loop.
+    auto &key                 = get_key(m_values.emplace_back(std::forward<Args>(args)...));
+    auto hash                 = mixed_hash(key);
+    auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
+    auto bucket_idx           = bucket_idx_from_hash(hash);
+
+    while (dist_and_fingerprint <= at(m_buckets, bucket_idx).m_dist_and_fingerprint) {
+      if (dist_and_fingerprint == at(m_buckets, bucket_idx).m_dist_and_fingerprint &&
+          m_equal(key, get_key(m_values[at(m_buckets, bucket_idx).m_value_idx]))) {
+        m_values.pop_back();  // value was already there, so get rid of it
+        return {begin() + static_cast<difference_type>(at(m_buckets, bucket_idx).m_value_idx), false};
+      }
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
+    }
+
+    // value is new, place the bucket and shift up until we find an empty spot
+    auto value_idx = static_cast<value_idx_type>(m_values.size() - 1);
+    if (ANKERL_UNORDERED_DENSE_UNLIKELY(is_full())) ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR {
+        // increase_size just rehashes all the data we have in m_values
+        increase_size();
+      }
+    else {
+      // place element and shift up until we find an empty spot
+      place_and_shift_up({dist_and_fingerprint, value_idx}, bucket_idx);
+    }
+    return {begin() + static_cast<difference_type>(value_idx), true};
+  }
+
+  template <class... Args>
+  auto emplace_hint(const_iterator /*hint*/, Args &&...args) -> iterator {
+    return emplace(std::forward<Args>(args)...).first;
+  }
+
+  template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto try_emplace(Key const &key, Args &&...args) -> std::pair<iterator, bool> {
+    return do_try_emplace(key, std::forward<Args>(args)...);
+  }
+
+  template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto try_emplace(Key &&key, Args &&...args) -> std::pair<iterator, bool> {
+    return do_try_emplace(std::move(key), std::forward<Args>(args)...);
+  }
+
+  template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto try_emplace(const_iterator /*hint*/, Key const &key, Args &&...args) -> iterator {
+    return do_try_emplace(key, std::forward<Args>(args)...).first;
+  }
+
+  template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto try_emplace(const_iterator /*hint*/, Key &&key, Args &&...args) -> iterator {
+    return do_try_emplace(std::move(key), std::forward<Args>(args)...).first;
+  }
+
+  template <
+    typename K, typename... Args, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+    std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE> && is_neither_convertible_v<K &&, iterator, const_iterator>,
+                     bool> = true>
+  auto try_emplace(K &&key, Args &&...args) -> std::pair<iterator, bool> {
+    return do_try_emplace(std::forward<K>(key), std::forward<Args>(args)...);
+  }
+
+  template <
+    typename K, typename... Args, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+    std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE> && is_neither_convertible_v<K &&, iterator, const_iterator>,
+                     bool> = true>
+  auto try_emplace(const_iterator /*hint*/, K &&key, Args &&...args) -> iterator {
+    return do_try_emplace(std::forward<K>(key), std::forward<Args>(args)...).first;
+  }
+
+  // Replaces the key at the given iterator with new_key. This does not change any other data in the underlying table,
+  // so all iterators and references remain valid. However, this operation can fail if new_key already exists in the
+  // table. In that case, returns {iterator to the already existing new_key, false} and no change is made.
+  //
+  // In the case of a set, this effectively removes the old key and inserts the new key at the same spot, which is more
+  // efficient than removing the old key and inserting the new key because it avoids repositioning the last element.
+  template <typename K>
+  auto replace_key(iterator it, K &&new_key) -> std::pair<iterator, bool> {
+    auto const new_key_hash = mixed_hash(new_key);
+
+    // first, check if new_key already exists and return if so
+    auto dist_and_fingerprint = dist_and_fingerprint_from_hash(new_key_hash);
+    auto bucket_idx           = bucket_idx_from_hash(new_key_hash);
+    while (dist_and_fingerprint <= at(m_buckets, bucket_idx).m_dist_and_fingerprint) {
+      auto const &bucket = at(m_buckets, bucket_idx);
+      if (dist_and_fingerprint == bucket.m_dist_and_fingerprint &&
+          m_equal(new_key, get_key(m_values[bucket.m_value_idx]))) {
+        return {begin() + static_cast<difference_type>(bucket.m_value_idx), false};
+      }
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
+    }
+
+    // const_cast is needed because iterator for the set is always const, so adding another get_key overload is not
+    // feasible.
+    auto &target_key              = const_cast<key_type &>(get_key(*it));
+    auto const old_key_bucket_idx = bucket_idx_from_hash(mixed_hash(target_key));
+
+    // Replace the key before doing any bucket changes. If it throws, no harm done, we are still in a valid state as we
+    // have not modified any buckets yet.
+    target_key = std::forward<K>(new_key);
+
+    auto const value_idx = static_cast<value_idx_type>(it - begin());
+
+    // Find the bucket containing our value_idx. It's guaranteed we find it, so no other stopping condition needed.
+    bucket_idx = old_key_bucket_idx;
+    while (value_idx != at(m_buckets, bucket_idx).m_value_idx) { bucket_idx = next(bucket_idx); }
+    erase_and_shift_down(bucket_idx);
+
+    // place the new bucket
+    dist_and_fingerprint = dist_and_fingerprint_from_hash(new_key_hash);
+    bucket_idx           = bucket_idx_from_hash(new_key_hash);
+    while (dist_and_fingerprint < at(m_buckets, bucket_idx).m_dist_and_fingerprint) {
+      dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+      bucket_idx           = next(bucket_idx);
+    }
+    place_and_shift_up({dist_and_fingerprint, value_idx}, bucket_idx);
+
+    return {it, true};
+  }
+
+  auto erase(iterator it) -> iterator {
+    auto hash       = mixed_hash(get_key(*it));
+    auto bucket_idx = bucket_idx_from_hash(hash);
+
+    auto const value_idx_to_remove = static_cast<value_idx_type>(it - cbegin());
+    while (at(m_buckets, bucket_idx).m_value_idx != value_idx_to_remove) { bucket_idx = next(bucket_idx); }
+
+    do_erase(bucket_idx, [](value_type const & /*unused*/) -> void {});
+    return begin() + static_cast<difference_type>(value_idx_to_remove);
+  }
+
+  auto extract(iterator it) -> value_type {
+    auto hash       = mixed_hash(get_key(*it));
+    auto bucket_idx = bucket_idx_from_hash(hash);
+
+    auto const value_idx_to_remove = static_cast<value_idx_type>(it - cbegin());
+    while (at(m_buckets, bucket_idx).m_value_idx != value_idx_to_remove) { bucket_idx = next(bucket_idx); }
+
+    auto tmp = std::optional<value_type>{};
+    do_erase(bucket_idx, [&tmp](value_type &&val) -> void { tmp = std::move(val); });
+    return std::move(tmp).value();
+  }
+
+  template <typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto erase(const_iterator it) -> iterator {
+    return erase(begin() + (it - cbegin()));
+  }
+
+  template <typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto extract(const_iterator it) -> value_type {
+    return extract(begin() + (it - cbegin()));
+  }
+
+  auto erase(const_iterator first, const_iterator last) -> iterator {
+    auto const idx_first     = first - cbegin();
+    auto const idx_last      = last - cbegin();
+    auto const first_to_last = std::distance(first, last);
+    auto const last_to_end   = std::distance(last, cend());
+
+    // remove elements from left to right which moves elements from the end back
+    auto const mid = idx_first + (std::min)(first_to_last, last_to_end);
+    auto idx       = idx_first;
+    while (idx != mid) {
+      erase(begin() + idx);
+      ++idx;
+    }
+
+    // all elements from the right are moved, now remove the last element until all done
+    idx = idx_last;
+    while (idx != mid) {
+      --idx;
+      erase(begin() + idx);
+    }
+
+    return begin() + idx_first;
+  }
+
+  auto erase(Key const &key) -> std::size_t {
+    return do_erase_key(key, [](value_type const & /*unused*/) -> void {});
+  }
+
+  auto extract(Key const &key) -> std::optional<value_type> {
+    auto tmp = std::optional<value_type>{};
+    do_erase_key(key, [&tmp](value_type &&val) -> void { tmp = std::move(val); });
+    return tmp;
+  }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto erase(K &&key) -> std::size_t {
+    return do_erase_key(std::forward<K>(key), [](value_type const & /*unused*/) -> void {});
+  }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto extract(K &&key) -> std::optional<value_type> {
+    auto tmp = std::optional<value_type>{};
+    do_erase_key(std::forward<K>(key), [&tmp](value_type &&val) -> void { tmp = std::move(val); });
+    return tmp;
+  }
+
+  void swap(table &other) noexcept(noexcept(std::is_nothrow_swappable_v<value_container_type> &&
+                                            std::is_nothrow_swappable_v<Hash> &&
+                                            std::is_nothrow_swappable_v<KeyEqual>)) {
+    using std::swap;
+    swap(other, *this);
+  }
+
+  // lookup /////////////////////////////////////////////////////////////////
+
+  template <typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto at(key_type const &key) -> Q & {
+    return do_at(key);
+  }
+
+  template <typename K, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+            std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
+  auto at(K const &key) -> Q & {
+    return do_at(key);
+  }
+
+  template <typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto at(key_type const &key) const -> Q const & {
+    return do_at(key);
+  }
+
+  template <typename K, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+            std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
+  auto at(K const &key) const -> Q const & {
+    return do_at(key);
+  }
+
+  template <typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto operator[](Key const &key) -> Q & {
+    return try_emplace(key).first->second;
+  }
+
+  template <typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+  auto operator[](Key &&key) -> Q & {
+    return try_emplace(std::move(key)).first->second;
+  }
+
+  template <typename K, typename Q = T, typename H = Hash, typename KE = KeyEqual,
+            std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
+  auto operator[](K &&key) -> Q & {
+    return try_emplace(std::forward<K>(key)).first->second;
+  }
+
+  auto count(Key const &key) const -> std::size_t { return find(key) == end() ? 0 : 1; }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto count(K const &key) const -> std::size_t {
+    return find(key) == end() ? 0 : 1;
+  }
+
+  auto find(Key const &key) -> iterator { return do_find(key); }
+
+  auto find(Key const &key) const -> const_iterator { return do_find(key); }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto find(K const &key) -> iterator {
+    return do_find(key);
+  }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto find(K const &key) const -> const_iterator {
+    return do_find(key);
+  }
+
+  auto contains(Key const &key) const -> bool { return find(key) != end(); }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto contains(K const &key) const -> bool {
+    return find(key) != end();
+  }
+
+  auto equal_range(Key const &key) -> std::pair<iterator, iterator> {
+    auto it = do_find(key);
+    return {it, it == end() ? end() : it + 1};
+  }
+
+  auto equal_range(const Key &key) const -> std::pair<const_iterator, const_iterator> {
+    auto it = do_find(key);
+    return {it, it == end() ? end() : it + 1};
+  }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto equal_range(K const &key) -> std::pair<iterator, iterator> {
+    auto it = do_find(key);
+    return {it, it == end() ? end() : it + 1};
+  }
+
+  template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+  auto equal_range(K const &key) const -> std::pair<const_iterator, const_iterator> {
+    auto it = do_find(key);
+    return {it, it == end() ? end() : it + 1};
+  }
+
+  // bucket interface ///////////////////////////////////////////////////////
+
+  auto bucket_count() const noexcept -> std::size_t {  // NOLINT(modernize-use-nodiscard)
+    return m_buckets.size();
+  }
+
+  static constexpr auto max_bucket_count() noexcept -> std::size_t {  // NOLINT(modernize-use-nodiscard)
+    return max_size();
+  }
+
+  // hash policy ////////////////////////////////////////////////////////////
+
+  [[nodiscard]] auto load_factor() const -> float {
+    return bucket_count() ? static_cast<float>(size()) / static_cast<float>(bucket_count()) : 0.0F;
+  }
+
+  [[nodiscard]] auto max_load_factor() const -> float { return m_max_load_factor; }
+
+  void max_load_factor(float ml) {
+    m_max_load_factor = ml;
+    if (bucket_count() != max_bucket_count()) {
+      m_max_bucket_capacity = static_cast<value_idx_type>(static_cast<float>(bucket_count()) * max_load_factor());
+    }
+  }
+
+  void rehash(std::size_t count) {
+    count       = (std::min)(count, max_size());
+    auto shifts = calc_shifts_for_size((std::max)(count, size()));
+    if (shifts != m_shifts) {
+      m_shifts = shifts;
+      deallocate_buckets();
+      m_values.shrink_to_fit();
+      allocate_buckets_from_shift();
+      clear_and_fill_buckets_from_values();
+    }
+  }
+
+  void reserve(std::size_t capa) {
+    capa = (std::min)(capa, max_size());
+    if constexpr (has_reserve<value_container_type>) {
+      // std::deque doesn't have reserve(). Make sure we only call when available
+      m_values.reserve(capa);
+    }
+    auto shifts = calc_shifts_for_size((std::max)(capa, size()));
+    if (0 == bucket_count() || shifts < m_shifts) {
+      m_shifts = shifts;
+      deallocate_buckets();
+      allocate_buckets_from_shift();
+      clear_and_fill_buckets_from_values();
+    }
+  }
+
+  // observers //////////////////////////////////////////////////////////////
+
+  auto hash_function() const -> hasher { return m_hash; }
+
+  auto key_eq() const -> key_equal { return m_equal; }
+
+  // nonstandard API: expose the underlying values container
+  [[nodiscard]] auto values() const noexcept -> value_container_type const & { return m_values; }
+
+  // non-member functions ///////////////////////////////////////////////////
+
+  friend auto operator==(table const &a, table const &b) -> bool {
+    if (&a == &b) { return true; }
+    if (a.size() != b.size()) { return false; }
+    for (auto const &b_entry : b) {
+      auto it = a.find(get_key(b_entry));
+      if constexpr (is_map_v<T>) {
+        // map: check that key is here, then also check that value is the same
+        if (a.end() == it || !(b_entry.second == it->second)) { return false; }
+      } else {
+        // set: only check that the key is here
+        if (a.end() == it) { return false; }
+      }
     }
     return true;
   }
 
-  friend bool operator!=(const flat_hash_set &lhs, const flat_hash_set &rhs) { return !(lhs == rhs); }
+  friend auto operator!=(table const &a, table const &b) -> bool { return !(a == b); }
 };
 
-template <typename T>
-struct power_of_two_std_hash : std::hash<T> {
-  typedef ska::power_of_two_hash_policy hash_policy;
-};
+}  // namespace detail
 
-}  // end namespace ska
+template <class Key, class T, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>,
+          class AllocatorOrContainer = std::allocator<std::pair<Key, T> >, class Bucket = bucket_type::standard,
+          class BucketContainer = detail::default_container_t>
+using map = detail::table<Key, T, Hash, KeyEqual, AllocatorOrContainer, Bucket, BucketContainer, false>;
+
+template <class Key, class T, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>,
+          class AllocatorOrContainer = std::allocator<std::pair<Key, T> >, class Bucket = bucket_type::standard,
+          class BucketContainer = detail::default_container_t>
+using segmented_map = detail::table<Key, T, Hash, KeyEqual, AllocatorOrContainer, Bucket, BucketContainer, true>;
+
+template <class Key, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>,
+          class AllocatorOrContainer = std::allocator<Key>, class Bucket = bucket_type::standard,
+          class BucketContainer = detail::default_container_t>
+using set = detail::table<Key, void, Hash, KeyEqual, AllocatorOrContainer, Bucket, BucketContainer, false>;
+
+template <class Key, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>,
+          class AllocatorOrContainer = std::allocator<Key>, class Bucket = bucket_type::standard,
+          class BucketContainer = detail::default_container_t>
+using segmented_set = detail::table<Key, void, Hash, KeyEqual, AllocatorOrContainer, Bucket, BucketContainer, true>;
+
+#if defined(ANKERL_UNORDERED_DENSE_PMR)
+
+namespace pmr {
+
+template <class Key, class T, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>,
+          class Bucket = bucket_type::standard>
+using map = detail::table<Key, T, Hash, KeyEqual, ANKERL_UNORDERED_DENSE_PMR::polymorphic_allocator<std::pair<Key, T> >,
+                          Bucket, detail::default_container_t, false>;
+
+template <class Key, class T, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>,
+          class Bucket = bucket_type::standard>
+using segmented_map =
+  detail::table<Key, T, Hash, KeyEqual, ANKERL_UNORDERED_DENSE_PMR::polymorphic_allocator<std::pair<Key, T> >, Bucket,
+                detail::default_container_t, true>;
+
+template <class Key, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>, class Bucket = bucket_type::standard>
+using set = detail::table<Key, void, Hash, KeyEqual, ANKERL_UNORDERED_DENSE_PMR::polymorphic_allocator<Key>, Bucket,
+                          detail::default_container_t, false>;
+
+template <class Key, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>, class Bucket = bucket_type::standard>
+using segmented_set = detail::table<Key, void, Hash, KeyEqual, ANKERL_UNORDERED_DENSE_PMR::polymorphic_allocator<Key>,
+                                    Bucket, detail::default_container_t, true>;
+
+}  // namespace pmr
+
+#endif
+
+// deduction guides ///////////////////////////////////////////////////////////
+
+// deduction guides for alias templates are only possible since C++20
+// see https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
+
+}  // namespace ANKERL_UNORDERED_DENSE_NAMESPACE
+}  // namespace ankerl::unordered_dense
+
+// std extensions /////////////////////////////////////////////////////////////
+
+namespace std {  // NOLINT(cert-dcl58-cpp)
+
+template <class Key, class T, class Hash, class KeyEqual, class AllocatorOrContainer, class Bucket, class Pred,
+          class BucketContainer, bool IsSegmented>
+// NOLINTNEXTLINE(cert-dcl58-cpp)
+auto erase_if(ankerl::unordered_dense::detail::table<Key, T, Hash, KeyEqual, AllocatorOrContainer, Bucket,
+                                                     BucketContainer, IsSegmented> &map,
+              Pred pred) -> std::size_t {
+  using map_t = ankerl::unordered_dense::detail::table<Key, T, Hash, KeyEqual, AllocatorOrContainer, Bucket,
+                                                       BucketContainer, IsSegmented>;
+
+  // going back to front because erase() invalidates the end iterator
+  auto const old_size = map.size();
+  auto idx            = old_size;
+  while (idx) {
+    --idx;
+    auto it = map.begin() + static_cast<typename map_t::difference_type>(idx);
+    if (pred(*it)) { map.erase(it); }
+  }
+
+  return old_size - map.size();
+}
+
+}  // namespace std
+
+#endif
+#endif

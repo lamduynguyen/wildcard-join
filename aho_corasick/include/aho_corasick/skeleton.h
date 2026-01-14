@@ -25,8 +25,15 @@ struct Token {
   static auto NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token;
 };
 
+// Per-pattern Skeleton
 class Skeleton {
  public:
+  using pat_off_t                              = u16;
+  static constexpr auto INVALID_PATTERN_OFFSET = std::numeric_limits<pat_off_t>::max();
+
+  /**
+   * @brief Matcher implements the matching logic, i.e., whether the text matches the wildcard pattern.
+   */
   struct Matcher {
     u64 segment_idx        = 0;  // The idx of the skeleton segment
     u64 min_text_start_pos = 0;  // The min starting offset in text that we can continue matching for seg[segment_idx]
@@ -45,13 +52,28 @@ class Skeleton {
     inline auto operator[](u64 text_pat_diff) -> u64 & { return match[text_pat_diff]; }
   };
 
+  /**
+   * @brief Segment implements Skeleton structure.
+   * That is, we compile the wildcard pattern into a set of segments -- split the wildcard by `%`.
+   * The segment then stores:
+   * - The set of literals -- which is separate by `_`
+   * - The positional constraints between these literals,
+   *    determined by the number of `_` sit between two consecutive literals
+   * - Some additional properties to handle corner cases, e.g., whether the segment contains a prefix percent or not
+   *
+   * The literal offset is implemented using:
+   * - A sorted vector of offsets
+   * - A hash map of offset -> position within the above sorted vector
+   * This impl allows optimal finding preceeding & next neighbors within the Segment
+   */
   struct Segment {
-    ska::flat_hash_map<u64, u64> prev_literal_offset;  // Map from literal's start pos to that of previous literal
-    u64 last_literal_start_pos;
+    std::vector<pat_off_t> literal_offset;
+    ska::flat_hash_map<pat_off_t, pat_off_t> lit_off_p;  // pos of an `offset` value within the above vector
     u64 suffix_underscore_cnt;
     bool has_prefix_percent;
     bool has_suffix_percent;
 
+    void Insert(u64 start_pos);
     auto Contain(u64 start_pos) const -> bool;
     auto IsFirstLiteral(u64 start_pos) const -> bool;
     auto IsLastLiteral(u64 start_pos) const -> bool;
@@ -61,6 +83,7 @@ class Skeleton {
   Skeleton(const char *p, size_t plen, const std::function<void(Token &)> &literal_fn);
   ~Skeleton() = default;
 
+  /* Skeleton segment (i.e., structure) utilities */
   inline auto OnlyWildcard() { return only_wildcard_; }
 
   inline auto operator[](int idx) -> Segment & { return seg_[idx]; }
@@ -73,6 +96,7 @@ class Skeleton {
 
   static auto SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool;
 
+  auto MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
   auto TryMatching(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
   auto SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool;
 

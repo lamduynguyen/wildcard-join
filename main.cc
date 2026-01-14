@@ -11,12 +11,12 @@
 #include <vector>
 
 #include "aho_corasick/aho_corasick.h"
+#include "common/csv.h"
+#include "common/perf_event.h"
 #include "kmp/kmp.h"
 
-#include "csv.h"
 #include "fmt/format.h"
 #include "join_strings.h"
-#include "perf_event.h"
 #include "roaring/roaring.hh"
 #include "third_party/succinct/elias_fano.hpp"
 
@@ -35,7 +35,6 @@ using FingerprintType             = uint8_t;
 constexpr size_t NGRAM_SIZE       = 3;
 constexpr size_t FINGERPRINT_SIZE = sizeof(FingerprintType) * CHAR_BIT;
 
-// TODO: Prototype with least-frequent characters and half-half (8 most-freq and 8 least-freq)
 constexpr uint8_t init_character_value(char c) {
   if (c >= 'A' && c <= 'Z') { c = c - 'A' + 'a'; }
   switch (c) {

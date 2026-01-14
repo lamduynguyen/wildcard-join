@@ -31,26 +31,34 @@ auto Token::NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token {
 };
 
 // --------------------------------------------------------------------------------------------
-
-auto Skeleton::Segment::Contain(u64 start_pos) const -> bool { return prev_literal_offset.contains(start_pos); }
-
-auto Skeleton::Segment::IsFirstLiteral(u64 start_pos) const -> bool {
-  return IsPreviousLiteral(std::numeric_limits<u64>::max(), start_pos);
+void Skeleton::Segment::Insert(u64 start_pos) {
+  literal_offset.emplace_back(start_pos);
+  lit_off_p.emplace(start_pos, literal_offset.size() - 1);
 }
 
-auto Skeleton::Segment::IsLastLiteral(u64 start_pos) const -> bool { return start_pos == last_literal_start_pos; }
+auto Skeleton::Segment::Contain(u64 start_pos) const -> bool { return lit_off_p.contains(start_pos); }
+
+auto Skeleton::Segment::IsFirstLiteral(u64 start_pos) const -> bool {
+  assert(Contain(start_pos));
+  return lit_off_p.at(start_pos) == 0;
+}
+
+auto Skeleton::Segment::IsLastLiteral(u64 start_pos) const -> bool {
+  assert(Contain(start_pos));
+  return lit_off_p.at(start_pos) == literal_offset.size() - 1;
+}
 
 auto Skeleton::Segment::IsPreviousLiteral(u64 prev_start_pos, u64 start_pos) const -> bool {
   assert(Contain(start_pos));
-  return prev_literal_offset.at(start_pos) == prev_start_pos;
+  auto pos = lit_off_p.at(start_pos);
+  return (pos > 0) && (literal_offset[pos - 1] == prev_start_pos);
 }
 
 // --------------------------------------------------------------------------------------------
-
 Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) : only_wildcard_(true) {
   size_t last_end_pos = 0;
   while (true) {
-    Segment match = {};
+    auto match = Segment();
 
     // Extract tokens by PERCENTAGE only
     auto prev_pos = last_end_pos;
@@ -59,8 +67,7 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
     if (prev_pos < tok.start) { match.has_prefix_percent = true; };
 
     // Build between-PERCENTAGE skeleton based on the extracted token -- p[tok.start : last_end_pos]
-    auto prev_start = std::numeric_limits<u64>::max();
-    auto pos        = tok.start;
+    auto pos = tok.start;
     for (auto pos = tok.start; pos < last_end_pos;) {
       auto literal = Token::NextToken(p, plen, pos);
       if (literal.start == std::string::npos) {
@@ -68,9 +75,7 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
         match.suffix_underscore_cnt = last_end_pos - pos;
         break;
       }
-      match.prev_literal_offset.emplace(literal.start, prev_start);
-      prev_start                   = literal.start;
-      match.last_literal_start_pos = literal.start;
+      match.Insert(literal.start);
       literal_fn(literal);
       only_wildcard_ = false;
     }
@@ -98,6 +103,16 @@ auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen)
     }
   }
   return (slen == underscore_cnt) || (slen > underscore_cnt && has_percent);
+}
+
+/**
+ * @brief Only match within the current considerate pattern. Two key conditions:
+ * - The being-matched pattern start position must be assocated with the being-matched skeleton segment
+ * - The start position in text must adhere to the positional constraint of the active skeleton matcher `instance`
+ */
+auto Skeleton::MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) -> bool {
+  return matcher.segment_idx < seg_.size() && seg_[matcher.segment_idx].Contain(ac_match.pattern_index.start_pos) &&
+         ac_match.text_start_pos >= matcher.min_text_start_pos;
 }
 
 auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher) -> bool {

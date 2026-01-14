@@ -122,8 +122,7 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
     auto &sket       = skeleton[instance.segment_idx];
     for (auto &match : ac_matchers) {
       // Must match within the current considerate pattern
-      // TODO: We should only skip on a pattern basis, i.e., must check for pattern ID in the ac_matcher part below
-      //  Focus on the comparison: match.text_start_pos >= instance.min_text_start_pos
+      // Focus on the comparison: match.text_start_pos >= instance.min_text_start_pos
       if (sket.Contain(match.pattern_index.start_pos) && match.text_start_pos >= instance.min_text_start_pos) {
         auto success = skeleton.TryMatching(match, instance);
 
@@ -171,13 +170,7 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
       auto &sket    = skeleton[pat_id];
       auto &matcher = instance[pat_id];
 
-      /**
-       * @brief Only match within the current considerate pattern. Two key conditions:
-       * - The being-matched pattern start position must be assocated with the being-matched skeleton segment
-       * - The start position in text must adhere to the positional constraint of the active skeleton matcher `instance`
-       */
-      if (matcher.segment_idx < sket.Size() && sket[matcher.segment_idx].Contain(match.pattern_index.start_pos) &&
-          match.text_start_pos >= instance[pat_id].min_text_start_pos) {
+      if (!result[pat_id] && sket.MayMatch(match, matcher)) {
         auto success = sket.TryMatching(match, matcher);
 
         if (success) {

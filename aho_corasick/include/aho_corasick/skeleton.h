@@ -1,7 +1,7 @@
 #pragma once
 
 #include "aho_corasick/aho_corasick.h"
-#include "common/flat_map.h"
+#include "common/lrucache.h"
 #include "common/typedef.h"
 #include "common/util.h"
 
@@ -21,44 +21,40 @@ struct Token {
 
   static inline auto IsDelim(char c) { return c == UNDERSCORE || c == PERCENTAGE; };
 
-  static auto NextToken(const char *s, size_t slen, std::size_t &pos) -> Token;
+  static auto NextToken(const char *s, size_t slen, std::size_t &pos, std::size_t &max_underscore_cnt) -> Token;
   static auto NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token;
 };
 
 // Per-pattern Skeleton
 class Skeleton {
  public:
-  using pat_off_t                                  = u16;
-  static constexpr auto INVALID_PATTERN_OFFSET     = std::numeric_limits<pat_off_t>::max();
-  static constexpr auto PARTIAL_MATCH_GC_THRESHOLD = 16;
+  using pat_off_t                              = u16;
+  static constexpr auto INVALID_PATTERN_OFFSET = std::numeric_limits<pat_off_t>::max();
+
+  // Forward declaration
+  struct Segment;
 
   /**
    * @brief Matcher implements the matching logic, i.e., whether the text matches the wildcard pattern.
    */
   class Matcher {
    public:
-    inline auto AdvanceNextSegment(u64 min_text_next_start_pos) {
-      segment_idx_++;
-      min_text_start_pos_ = min_text_next_start_pos;
-      match_.clear();
-    }
+    Matcher(u64 max_size) : match_(max_size) {}
 
     inline auto CurrentSegmentIdx() { return segment_idx_; }
 
-    inline auto Contain(u64 text_pat_diff) const { return match_.contains(text_pat_diff); }
+    inline auto Get(u64 text_pat_diff) const { return match_.Get(text_pat_diff); }
 
-    inline auto Insert(u64 text_pat_diff, u64 pat_cursor) { match_.emplace(text_pat_diff, pat_cursor); }
+    inline auto Contain(u64 text_pat_diff) const { return match_.Contain(text_pat_diff); }
 
-    inline auto operator[](u64 text_pat_diff) -> pat_off_t & { return match_[text_pat_diff]; }
-
-    inline auto NumberOfPartialMatches() { return match_.size(); }
+    inline auto Upsert(u64 text_pat_diff, u64 pat_cursor) { match_.Upsert(text_pat_diff, pat_cursor); }
 
    private:
     friend class Skeleton;
 
     u64 segment_idx_        = 0;  // The idx of the skeleton segment
     u64 min_text_start_pos_ = 0;  // The min starting offset in text that we can continue matching for seg[segment_idx]
-    ankerl::unordered_dense::map<u64, pat_off_t> match_;  // A mapping of (text_cur - pat_cur) => pat_cur
+    LRUCache<u64, pat_off_t> match_;  // A mapping of (text_cur - pat_cur) => pat_cur
   };
 
   /**
@@ -79,6 +75,7 @@ class Skeleton {
     std::vector<pat_off_t> literal_offset;
     ankerl::unordered_dense::map<pat_off_t, pat_off_t> lit_off_p;  // pos of an `offset` value within the above vector
     u64 suffix_underscore_cnt;
+    u64 max_underscore_cnt;
     bool has_prefix_percent;
     bool has_suffix_percent;
 
@@ -107,10 +104,11 @@ class Skeleton {
   static auto SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool;
 
   /* Matching utilities */
+  auto InitializeMatcher() -> Matcher;
   auto MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
   auto TryMatching(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
   auto SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool;
-  void TryGarbageCollection(u64 current_text_offset, Matcher &matcher);
+  auto AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher) -> bool;
 
  private:
   bool only_wildcard_;

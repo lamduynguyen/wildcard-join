@@ -5,32 +5,6 @@
 
 namespace aho_corasick {
 
-auto Token::NextToken(const char *s, size_t slen, std::size_t &pos) -> Token {
-  auto prev_pos = pos;
-  while (pos < slen && IsDelim(s[pos])) { pos++; }
-  if (pos >= slen) {
-    // no more tokens; resetting pos back to suffix processing
-    pos = prev_pos;
-    return {std::string_view::npos, 0};
-  }
-  std::size_t start = pos;
-  while (pos < slen && !IsDelim(s[pos])) { pos++; }
-  return {start, pos - start};
-};
-
-auto Token::NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token {
-  auto prev_pos = pos;
-  while (pos < slen && s[pos] == PERCENTAGE) { pos++; }
-  if (pos >= slen) {
-    // no more tokens; resetting pos back to suffix processing
-    pos = prev_pos;
-    return {std::string_view::npos, 0};
-  }
-  std::size_t start = pos;
-  while (pos < slen && s[pos] != PERCENTAGE) { pos++; }
-  return {start, pos - start};
-};
-
 // --------------------------------------------------------------------------------------------
 void Skeleton::Segment::Insert(pat_off_t start_pos) {
   literal_offset.emplace_back(start_pos);
@@ -76,7 +50,7 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
     // Build between-PERCENTAGE skeleton based on the extracted token -- p[tok.start : last_end_pos]
     auto pos = tok.start;
     for (auto pos = tok.start; pos < last_end_pos;) {
-      auto literal = Token::NextToken(p, plen, pos);
+      auto literal = Token::NextToken(p, plen, pos, match.max_underscore_cnt);
       if (literal.start == std::string::npos) {
         // this means we have a suffix _ scenario
         match.suffix_underscore_cnt = last_end_pos - pos;
@@ -127,6 +101,7 @@ auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher)
   const auto diff     = ac_match.text_start_pos - ac_match.pattern_index.start_pos;
 
   if (segment.IsFirstLiteral(ac_match.pattern_index.start_pos)) {
+    assert(!matcher.Contain(diff));
     /**
      * @brief Two scenarios:
      * - With prefix percentage, the new 1st literal can start anywhere
@@ -135,17 +110,17 @@ auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher)
      */
     if (segment.has_prefix_percent ||
         (matcher.segment_idx_ == 0 && ac_match.text_start_pos == ac_match.pattern_index.start_pos)) {
-      matcher.Insert(diff, ac_match.pattern_index.start_pos);
+      matcher.Upsert(diff, ac_match.pattern_index.start_pos);
       return true;
     }
   } else if (matcher.Contain(diff)) {
     // Otherwise, check if there is a previous literal that has the exact gap we are looking for
-    auto prev_pat_pos  = matcher[diff];
+    auto prev_pat_pos  = matcher.Get(diff);
     auto prev_text_idx = prev_pat_pos + diff;
     assert(ac_match.text_start_pos >= prev_text_idx);
     if (segment.IsPreviousLiteral(prev_pat_pos, ac_match.pattern_index.start_pos) &&
         ac_match.text_start_pos - prev_text_idx == ac_match.pattern_index.start_pos - prev_pat_pos) {
-      matcher[diff] = ac_match.pattern_index.start_pos;
+      matcher.Upsert(diff, ac_match.pattern_index.start_pos);
       return true;
     }
   }
@@ -169,17 +144,48 @@ auto Skeleton::SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher 
      ac_match.text_start_pos + ac_match.pattern_index.keyword_len + segment.suffix_underscore_cnt == text_length));
 }
 
-void Skeleton::TryGarbageCollection(u64 current_text_offset, Matcher &matcher) {
-  if (matcher.NumberOfPartialMatches() >= PARTIAL_MATCH_GC_THRESHOLD && RandomGenerator::GetRandU64() % 100 == 0) {
-    std::erase_if(matcher.match_, [&](const auto &item) {
-      const auto &seg_idx                     = matcher.segment_idx_;
-      const auto &[diff, pat_index_start_pos] = item;
-      assert(!seg_[seg_idx].IsLastLiteral(pat_index_start_pos));
-
-      auto next_literal_offset = seg_[seg_idx].GetNextLiteralOffset(pat_index_start_pos);
-      return next_literal_offset + diff < current_text_offset;
-    });
-  }
+auto Skeleton::InitializeMatcher() -> Matcher {
+  assert(!seg_.empty());
+  return Matcher(seg_[0].max_underscore_cnt);
 }
+
+auto Skeleton::AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher) -> bool {
+  matcher.segment_idx_++;
+  matcher.min_text_start_pos_ = min_text_next_start_pos;
+  if (matcher.segment_idx_ < seg_.size()) {
+    auto &next_segment = seg_[matcher.segment_idx_];
+    matcher.match_     = LRUCache<u64, pat_off_t>(next_segment.max_underscore_cnt + 1);
+    return true;
+  }
+  return false;
+}
+
+// --------------------------------------------------------------------------------------------
+auto Token::NextToken(const char *s, size_t slen, std::size_t &pos, std::size_t &max_underscore_cnt) -> Token {
+  auto prev_pos = pos;
+  while (pos < slen && IsDelim(s[pos])) { pos++; }
+  max_underscore_cnt = std::max(max_underscore_cnt, pos - prev_pos);
+  if (pos >= slen) {
+    // no more tokens; resetting pos back to suffix processing
+    pos = prev_pos;
+    return {std::string_view::npos, 0};
+  }
+  std::size_t start = pos;
+  while (pos < slen && !IsDelim(s[pos])) { pos++; }
+  return {start, pos - start};
+};
+
+auto Token::NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token {
+  auto prev_pos = pos;
+  while (pos < slen && s[pos] == PERCENTAGE) { pos++; }
+  if (pos >= slen) {
+    // no more tokens; resetting pos back to suffix processing
+    pos = prev_pos;
+    return {std::string_view::npos, 0};
+  }
+  std::size_t start = pos;
+  while (pos < slen && s[pos] != PERCENTAGE) { pos++; }
+  return {start, pos - start};
+};
 
 }  // namespace aho_corasick

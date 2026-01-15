@@ -115,8 +115,8 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
   trie.BuildSuffixLink(1);
 
   // Start matching text
-  aho_corasick::Skeleton::Matcher instance = {};
-  auto iterate                             = trie.StartIterativeParseText(s, slen);
+  auto instance = skeleton.InitializeMatcher();
+  auto iterate  = trie.StartIterativeParseText(s, slen);
   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
     auto ac_matchers = trie.ContinueParseText(iterate);
     auto &sket       = skeleton[instance.CurrentSegmentIdx()];
@@ -129,8 +129,7 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
         // Now, check if we just insert the last match of the sket
         if (success && sket.IsLastLiteral(match.pattern_index.start_pos) &&
             skeleton.SatisfyMatcher(match, instance, slen)) {
-          instance.AdvanceNextSegment(end_offset + sket.suffix_underscore_cnt + 1);
-          if (instance.CurrentSegmentIdx() >= skeleton.Size()) { return true; }
+          if (!skeleton.AdvanceNextSegment(end_offset + sket.suffix_underscore_cnt + 1, instance)) { return true; }
         }
       }
     }
@@ -146,6 +145,7 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
 
   // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
   std::vector<aho_corasick::Skeleton> skeleton;
+  std::vector<aho_corasick::Skeleton::Matcher> instance;
   for (auto idx = 0UL; idx < patterns.size(); idx++) {
     auto &pat = patterns[idx];
     skeleton.emplace_back(pat.c_str(), pat.size(), [&](aho_corasick::Token &tok) {
@@ -153,14 +153,15 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
     });
     if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
       result[idx] = aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, pat.c_str(), pat.size());
+      instance.emplace_back(0);
+    } else {
+      instance.push_back(skeleton.back().InitializeMatcher());
     }
   }
 
   // Building suffix & output links
   trie.BuildSuffixLink(1);
 
-  // Start matching text
-  std::vector<aho_corasick::Skeleton::Matcher> instance(patterns.size());
   auto iterate = trie.StartIterativeParseText(s, slen);
   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
     auto ac_matchers = trie.ContinueParseText(iterate);
@@ -177,13 +178,13 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
           // Now, check if we just insert the last match of the sket
           if (sket[matcher.CurrentSegmentIdx()].IsLastLiteral(match.pattern_index.start_pos) &&
               sket.SatisfyMatcher(match, matcher, slen)) {
-            matcher.AdvanceNextSegment(end_offset + sket[matcher.CurrentSegmentIdx()].suffix_underscore_cnt + 1);
-            if (matcher.CurrentSegmentIdx() >= sket.Size()) { result[pat_id] = true; }
+            if (!sket.AdvanceNextSegment(end_offset + sket[matcher.CurrentSegmentIdx()].suffix_underscore_cnt + 1,
+                                         matcher)) {
+              result[pat_id] = true;
+            }
           }
         }
       }
-
-      sket.TryGarbageCollection(end_offset, matcher);
     }
   }
 

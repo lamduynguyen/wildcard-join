@@ -1,0 +1,351 @@
+campaignID,campaignName,campaignStartDate,campaignEndDate,campaignDescription
+0,Connect,2013-01-01,2013-01-31,"Connect: Build deeper connections, stronger relationships, and lasting impact."
+1,SmartSense,2013-01-20,2013-02-19,SmartSense: Simplify your life with intelligent automation and seamless connectivity.
+2,NovaView,2013-02-02,2013-03-04,"NovaView: Unlock a new perspective on your data, effortlessly."
+3,Eco Glow,2013-02-10,2013-03-12,"Reveal your radiant, healthy glow with Eco Glow – naturally enhancing your beauty and protecting our planet."
+4,Portable Powerhouse,2013-02-26,2013-03-28,Unleash your potential with Portable Powerhouse – your ultimate charge station for a life of effortless productivity and adventure.
+5,Precision Kitchen,2013-03-09,2013-04-08,Precision Kitchen: Elevate your cooking with expertly crafted tools and techniques.
+6,Smart Kitchen,2013-03-26,2013-04-25,Simplify your cooking and elevate your meals with Smart Kitchen – your all-in-one solution for delicious results.
+7,Eco Smart Hub,2013-04-09,2013-05-09,"Eco Smart Hub: Simplify your home, save energy, and protect our planet – one smart choice at a time."
+8,SmartHome Hub,2013-04-26,2013-05-26,Simplify your life and elevate your home with the SmartHome Hub – your connected ecosystem at your fingertips.
+9,SonicFlow,2013-05-14,2013-06-13,SonicFlow: Unleash your team’s potential with seamless workflow and effortless collaboration.
+10,SmartHome Hub,2013-06-03,2013-07-03,"Simplify your life and elevate your home with the SmartHome Hub – your central control for a smarter, safer, and more comfortable living space."
+11,All-in-One Power,2013-06-13,2013-07-13,Unlock effortless productivity and maximize your potential with All-in-One Power – your ultimate solution for streamlined workflows and boosted efficiency.
+12,SonicFlow,2013-07-03,2013-08-02,"SonicFlow: Unleash your creativity with seamless, intuitive design flows that drive engagement."
+13,Ultra Smart Drive,2013-07-19,2013-08-18,"Ultra Smart Drive: Drive smarter, safer, and more efficiently with our revolutionary driving technology."
+14,EcoChill,2013-07-30,2013-08-29,"EcoChill: Find your calm, sustainably."
+15,Silence,2013-08-07,2013-09-06,"Silence: Embrace stillness, rediscover yourself."
+16,SmartHome System,2013-08-18,2013-09-17,"Simplify your life and elevate your home with the SmartHome System – effortless automation, enhanced security, and unparalleled comfort."
+17,FusionCraft,2013-09-02,2013-10-02,Unleash your creativity with FusionCraft – where design meets innovation and transforms your ideas into stunning realities.
+18,ProFusion Oven,2013-09-16,2013-10-16,Unlock the full potential of your baking with the ProFusion Oven – unparalleled precision and consistent results.
+19,Smart Home Thermostat,2013-10-03,2013-11-02,Take control of your comfort and save money with the Smart Home Thermostat – effortlessly manage your home’s temperature.
+20,Flash Drive,2013-10-16,2013-11-15,Unlock your creativity and productivity with Flash Drive – your portable powerhouse for everything you need.
+21,EcoDigital,2013-10-23,2013-11-22,"EcoDigital: Sustainable tech, brilliant results."
+22,SmartHome,2013-11-11,2013-12-11,"Transform your home into a smarter, safer, and more comfortable space with SmartHome."
+23,SmartHome Hub,2013-12-01,2013-12-31,Simplify your life and elevate your home with the SmartHome Hub – seamlessly connecting your devices and creating a truly intelligent living space.
+24,...SmartNest,2013-12-18,2014-01-17,"SmartNest: Simplify your life, enhance your home."
+25,SonicPulse,2014-01-02,2014-02-01,"Unleash your creativity with SonicPulse – a revolutionary new tool that transforms ideas into vibrant, dynamic designs."
+26,SmartHomeLens,2014-01-20,2014-02-19,"Unlock effortless living with SmartHomeLens – simplify your home, enhance your life."
+27,SmartPulse,2014-02-07,2014-03-09,SmartPulse: Elevate your productivity with intelligent insights and seamless workflow automation.
+28,SmartHome Digital Camera,2014-02-23,2014-03-25,See your home like never before with the SmartHome Digital Camera – effortlessly capturing every moment.
+29,Smart Kitchen Hub,2014-03-15,2014-04-14,Simplify your cooking with Smart Kitchen Hub – the intelligent kitchen assistant that anticipates your needs and elevates every meal.
+30,SmartHomeTech,2014-03-24,2014-04-23,"Transform your home into a smarter, safer, and more comfortable space with SmartHomeTech."
+31,SmartHomeTech,2014-04-05,2014-05-05,"Simplify your life and elevate your home with SmartHomeTech – seamlessly connecting technology for a smarter, safer, and more comfortable living space."
+32,ProFusion,2014-04-21,2014-05-21,ProFusion: Unleash your creative potential with unparalleled visual fidelity.
+33,Smart Home Studio,2014-05-06,2014-06-05,Transform your space into a creative haven with Smart Home Studio – effortlessly design and build your dream home.
+34,Gaming Smart Light Bulb,2014-05-22,2014-06-21,Transform your space with Gaming Smart Light Bulbs – where immersive visuals meet dynamic lighting.
+35,Adaptive Echo,2014-05-30,2014-06-29,Unlock your unique potential with Adaptive Echo – a personalized audio experience that adapts to *you*.
+36,SmartHome,2014-06-18,2014-07-18,"Transform your home into a smart, secure, and effortlessly connected sanctuary."
+37,SmartZone,2014-06-25,2014-07-25,Unlock personalized productivity and focus with SmartZone – your dynamic workspace designed for optimal results.
+38,SmartHome Hub,2014-07-04,2014-08-03,Simplify your life and elevate your home with the SmartHome Hub – your central control for a connected and comfortable living space.
+39,Brew,2014-07-11,2014-08-10,Brew: Unleash your creativity and flavor with a refreshingly bold new approach to coffee.
+40,InnovationSpark,2014-07-20,2014-08-19,Ignite your creativity and discover groundbreaking ideas with InnovationSpark – we’re sparking the future of innovation.
+41,SmartHome,2014-08-06,2014-09-05,"Transform your home into a connected sanctuary with SmartHome – simplify your life, enhance your security, and elevate your comfort."
+42,Smart Home Hub,2014-08-19,2014-09-18,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting all your devices for a truly intelligent living space.
+43,ProSonic Amplification,2014-08-27,2014-09-26,"Unlock a richer, deeper sound with ProSonic Amplification – experience audio like never before."
+44,SmartHome Wash,2014-09-14,2014-10-14,"Transform your home into a seamlessly connected, effortlessly clean space with SmartHome Wash."
+45,Portable Powerhouse,2014-09-27,2014-10-27,"Unleash your potential with Portable Powerhouse – your reliable, compact power source for everything you need."
+46,Smart Home Hub,2014-10-12,2014-11-11,"Transform your home into a seamless, connected oasis with the Smart Home Hub."
+47,SmartHome Hub,2014-10-25,2014-11-24,Simplify your life and elevate your home with the SmartHome Hub – your central command for a truly connected living space.
+48,Smart Home Hub,2014-11-02,2014-12-02,Simplify your life and elevate your home with the Smart Home Hub – your central command for a truly connected living space.
+49,Smart Home Hub,2014-11-19,2014-12-19,"Simplify your life and elevate your home with the Smart Home Hub – your central command for a seamless, connected living experience."
+50,Smart Home Hub,2014-12-09,2015-01-08,Simplify your life and elevate your home with the Smart Home Hub – effortlessly connecting and controlling all your devices.
+51,AmbientFlow,2014-12-26,2015-01-25,"AmbientFlow: Transform your space with seamless, perfectly balanced light and sound, creating a truly immersive and relaxing atmosphere."
+52,PixelPulse,2015-01-03,2015-02-02,Unleash your creative potential with PixelPulse – where pixels come to life.
+53,Microwave Ready,2015-01-13,2015-02-12,"Microwave Ready: Delicious meals, fast and easy."
+54,SmartHome,2015-01-25,2015-02-24,Transform your home into a smart sanctuary with SmartHome – effortlessly simplify your life and maximize your comfort.
+55,Powerhouse,2015-02-04,2015-03-06,Unleash your potential with Powerhouse – transform your goals into reality.
+56,SmartHomeHub,2015-02-11,2015-03-13,Simplify your life and elevate your home with SmartHomeHub – seamlessly connecting your devices for effortless control and enhanced comfort.
+57,Gaming Air Purifier,2015-02-26,2015-03-28,"Breathe cleaner air, game smarter with the Gaming Air Purifier."
+58,SmartChill,2015-03-08,2015-04-07,"Unwind effortlessly with SmartChill: Personalized comfort, optimized for your well-being."
+59,SonicPulse,2015-03-19,2015-04-18,Unleash unparalleled audio clarity and immersive sound with SonicPulse – experience music like never before.
+60,Smart Home Hub,2015-04-06,2015-05-06,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything.
+61,Charge & Stream,2015-04-23,2015-05-23,Unlock your potential with Charge & Stream – effortlessly manage your finances and achieve your goals.
+62,Smart Home Hub,2015-05-03,2015-06-02,Simplify your life and maximize your comfort with the Smart Home Hub – your central control for a truly connected home.
+63,UltraStream,2015-05-13,2015-06-12,"Unleash seamless streaming with UltraStream – your ultimate entertainment hub, delivered effortlessly."
+64,SmartHomeBrew,2015-05-29,2015-06-28,"Elevate your coffee ritual with SmartHomeBrew – effortless brewing, seamless control, and unparalleled quality."
+65,SmartHome Hub,2015-06-16,2015-07-16,Simplify your life and elevate your home with the SmartHome Hub – seamlessly connecting all your devices for effortless control.
+66,SmartHome Hub,2015-07-05,2015-08-04,"Simplify your life and elevate your home with the SmartHome Hub – your central control for a seamless, connected living experience."
+67,NexusCore,2015-07-15,2015-08-14,NexusCore: Unlock unparalleled performance and seamless connectivity with our revolutionary platform.
+68,SmartHome Hub,2015-07-31,2015-08-30,Simplify your life and elevate your home with the SmartHome Hub – your all-in-one control center.
+69,SmartZone,2015-08-08,2015-09-07,Unlock effortless productivity and seamless workflows with SmartZone – your intelligent space for optimized collaboration.
+70,SmartHome Hub,2015-08-16,2015-09-15,Simplify your life and elevate your home with the SmartHome Hub – your central control for a connected and comfortable living space.
+71,Brew & Charge,2015-08-23,2015-09-22,Brew & Charge: Unleash your creativity with expertly crafted coffee and a vibrant atmosphere.
+72,Sense,2015-09-12,2015-10-12,"Sense: Unlock your potential, one mindful moment at a time."
+73,Smart Home Audio,2015-09-27,2015-10-27,"Transform your home into a haven of sound with Smart Home Audio – effortless connectivity, immersive audio, and unparalleled convenience."
+74,AmbientSense,2015-10-11,2015-11-10,"AmbientSense: Immerse yourself in a world of calm and focus, effortlessly."
+75,SmartLight,2015-10-26,2015-11-25,"Illuminate your life with SmartLight – effortless automation and personalized ambiance, all in one."
+76,Smart Home Hub,2015-11-05,2015-12-05,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything.
+77,Smart Home,2015-11-21,2015-12-21,"Transform your home into a smart sanctuary with Smart Home – effortless comfort, enhanced security, and unparalleled control."
+78,Smart Home Hub,2015-12-05,2016-01-04,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting your devices and unlocking a truly intelligent living experience.
+79,SmartHomeHub,2015-12-22,2016-01-21,Simplify your life and elevate your home with SmartHomeHub – your all-in-one control center.
+80,SmartHome Hub,2016-01-02,2016-02-01,Simplify your life and elevate your home with the SmartHome Hub – your central command for a truly connected and intelligent living space.
+81,SonicBlend,2016-01-09,2016-02-08,Unleash your inner speedster with SonicBlend – where vibrant colors and infectious beats collide!
+82,Portable Power Hub,2016-01-23,2016-02-22,"Power up your adventures with the Portable Power Hub – always ready, always charged."
+83,SmartHome Hub,2016-02-03,2016-03-04,"Simplify your life and elevate your home with the SmartHome Hub – your connected home, effortlessly."
+84,SmartHomeHub,2016-02-23,2016-03-24,Simplify your life and elevate your home with SmartHomeHub – the intelligent hub that seamlessly connects and controls everything.
+85,GearForge,2016-03-03,2016-04-02,GearForge: Unleash your creativity and build the tools you need to conquer any challenge.
+86,Sonic Flow,2016-03-18,2016-04-17,Unleash your potential with Sonic Flow – seamless integration and effortless workflows that amplify your productivity.
+87,EcoSense,2016-03-26,2016-04-25,"EcoSense: Breathe easier, live greener – discover sustainable solutions for a healthier planet."
+88,USB_C Glow,2016-04-11,2016-05-11,Unleash a burst of vibrant style with USB-C Glow – your charging cable that shines!
+89,SmartLight,2016-04-18,2016-05-18,"SmartLight: Illuminate your life with intelligent lighting, perfectly tailored to your needs."
+90,SmartHome,2016-04-28,2016-05-28,"Transform your home into a smart, secure, and effortless living space with SmartHome."
+91,AirFlow,2016-05-05,2016-06-04,"Unleash your creativity with AirFlow – effortlessly transform your workspace into a dynamic, inspiring zone."
+92,Apex Pulse,2016-05-16,2016-06-15,Unleash your peak performance with Apex Pulse – elevate your workouts and unlock your full potential.
+93,PixelLight,2016-05-24,2016-06-23,"PixelLight: Unleash your brand's visual story with stunning, dynamic light design."
+94,Connect & Purify,2016-06-10,2016-07-10,Uncover hidden connections and powerfully purify your life with Connect & Purify.
+95,Fusion,2016-06-28,2016-07-28,"Unleash a new you – seamlessly blend your passions and discover a vibrant, personalized future with Fusion."
+96,EcoFlow,2016-07-11,2016-08-10,"EcoFlow: Powering a sustainable future, one charge at a time."
+97,SonicBloom,2016-07-27,2016-08-26,"SonicBloom: Unleash your inner hero and transform your world with vibrant, dazzling blooms."
+98,Black Ice Maker,2016-08-09,2016-09-08,Unleash your inner thrill: Black Ice Maker – where darkness meets danger.
+99,Power Surge,2016-08-17,2016-09-16,Power Surge: Unleash your device's full potential with lightning-fast protection.
+100,EnergySpark,2016-08-25,2016-09-24,Ignite your potential with EnergySpark – a focused campaign designed to boost productivity and drive results.
+101,QuietTech,2016-09-03,2016-10-03,"QuietTech: Unleash your focus, amplify your results."
+102,SmartHome,2016-09-18,2016-10-18,"Transform your home into a smart sanctuary with SmartHome – effortless automation, enhanced security, and unparalleled comfort."
+103,Smart Home Hub,2016-09-28,2016-10-28,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting your devices for ultimate comfort and control.
+104,Ultra Streamline,2016-10-13,2016-11-12,Unleash your productivity with Ultra Streamline – effortlessly organize and conquer your tasks.
+105,SmartHome Kitchen,2016-11-01,2016-12-01,"Elevate your cooking experience with SmartHome Kitchen – seamless technology for effortless, delicious meals."
+106,SmartScale,2016-11-14,2016-12-14,"Unlock your healthiest self with SmartScale – effortlessly track your weight, understand your habits, and achieve your goals."
+107,SmartHome,2016-11-28,2016-12-28,"Transform your home into a smart sanctuary with SmartHome – effortlessly connect, automate, and personalize your life."
+108,Smart Home Hub,2016-12-07,2017-01-06,Simplify your life and enhance your home with the Smart Home Hub – seamlessly connecting and controlling all your devices.
+109,Sonic Sanctuary,2016-12-19,2017-01-18,Escape the chaos and rediscover tranquility with Sonic Sanctuary – a curated collection of calming experiences designed to soothe your soul.
+110,SmartHome Hub,2017-01-05,2017-02-04,Simplify your life and elevate your home with the SmartHome Hub – your all-in-one control center.
+111,SmartHomeSense,2017-01-13,2017-02-12,"Transform your home into a smarter, safer, and more comfortable space with SmartHomeSense."
+112,Luminary Studio,2017-01-25,2017-02-24,Illuminate your creative vision with Luminary Studio – where ideas take shape and brilliance is born.
+113,Smart Home Hub,2017-02-02,2017-03-04,Simplify your life and elevate your home with the Smart Home Hub – your central command for a truly connected and comfortable living space.
+114,Smart Home Hub,2017-02-19,2017-03-21,Simplify your life and elevate your home with the Smart Home Hub – effortlessly connecting and controlling everything you need.
+115,SmartHome Wash,2017-03-05,2017-04-04,"Transform your home into a smart, effortlessly clean space with SmartHome Wash."
+116,SmartHome Pulse,2017-03-16,2017-04-15,"Unlock effortless living with SmartHome Pulse – seamlessly integrate your home with intelligent automation for a simpler, more connected life."
+117,Capture,2017-03-29,2017-04-28,Capture your biggest goals – unlock your potential with Capture.
+118,PowerStream,2017-04-05,2017-05-05,PowerStream: Unlock unprecedented efficiency and growth with our intelligent automation solution.
+119,Smart Home Hub,2017-04-13,2017-05-13,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting your devices for effortless control and unparalleled comfort.
+120,AuraSound,2017-04-29,2017-05-29,"AuraSound: Immerse yourself in sound, rediscover your peace."
+121,SmartHomeCore,2017-05-15,2017-06-14,"SmartHomeCore: Simplify your life with seamless automation and effortless control, right at your fingertips."
+122,EcoTech Kitchen,2017-05-26,2017-06-25,"EcoTech Kitchen: Sustainable cooking, effortlessly delicious."
+123,SmartSense,2017-06-15,2017-07-15,"SmartSense: Simplify your life, optimize your space, and unlock effortless living."
+124,Smart Home Gear,2017-06-27,2017-07-27,"Transform your home into a connected sanctuary with Smart Home Gear – effortless comfort, enhanced security, and ultimate control."
+125,Illuminate,2017-07-05,2017-08-04,Illuminate: Discover your brilliance and unlock your potential with a fresh perspective.
+126,SmartHome Hub,2017-07-12,2017-08-11,Simplify your life and elevate your home with the SmartHome Hub – seamlessly connecting your devices for ultimate convenience.
+127,SmartBlend,2017-07-31,2017-08-30,"SmartBlend: Elevate your everyday with intelligently curated experiences, seamlessly blending your passions and routines."
+128,GearUp Pro,2017-08-14,2017-09-13,GearUp Pro: Level up your productivity and unlock your full potential with powerful tools designed to streamline your workflow.
+129,SmartHomeCore,2017-08-28,2017-09-27,Unlock effortless living with SmartHomeCore – seamlessly integrate and control your home for ultimate comfort and security.
+130,SmartHome Hub,2017-09-09,2017-10-09,"Simplify your life and elevate your home with the SmartHome Hub – your central control for a smarter, safer, and more comfortable space."
+131,SmartSphere,2017-09-22,2017-10-22,SmartSphere: Simplify your life with intelligent automation and seamless connectivity.
+132,Pro Audio Hub,2017-10-07,2017-11-06,Pro Audio Hub: Unleash your audio's full potential with expertly curated gear and unparalleled service.
+133,Pulse,2017-10-22,2017-11-21,Pulse: Unlock your potential with personalized insights and actionable steps to thrive.
+134,USB_C Ecosystem,2017-11-07,2017-12-07,"Unlock seamless connectivity with the USB-C Ecosystem – power your devices, streamline your workflow, and experience the future of charging."
+135,SenseComplete,2017-11-27,2017-12-27,"SenseComplete: Unlock seamless workflows and effortless automation – simplify your business with intuitive, connected tools."
+136,Ultra Smart Device.,2017-12-13,2018-01-12,"Unleash effortless control and unparalleled intelligence with Ultra Smart Device – your life, simplified."
+137,Harmony Home,2017-12-27,2018-01-26,Harmony Home: Create a sanctuary of comfort and connection with beautifully designed spaces that nurture your life.
+138,SmartHome Audio,2018-01-16,2018-02-15,"Transform your home into a haven of sound with SmartHome Audio – effortless audio, perfectly tailored to your space."
+139,PixelPro,2018-01-25,2018-02-24,"PixelPro: Unleash your brand’s visual potential with stunning, professional-quality pixel art."
+140,SonicFlow,2018-02-10,2018-03-12,SonicFlow: Unleash your creativity with seamless integration and effortless flow.
+141,Brew & Connect,2018-02-28,2018-03-30,"Brew & Connect: Unleash your passions, build lasting connections – one delicious cup at a time."
+142,Smart Home Hub,2018-03-08,2018-04-07,Simplify your life and elevate your home with the Smart Home Hub – your central command for a truly connected and comfortable living space.
+143,…Connect.,2018-03-16,2018-04-15,"Connect with your passions, ignite your creativity, and discover what truly matters."
+144,SonicFlow,2018-04-05,2018-05-05,SonicFlow: Unleash your team's peak performance with seamless workflow and effortless collaboration.
+145,Smart Home Hub,2018-04-18,2018-05-18,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything.
+146,SonicSense,2018-05-07,2018-06-06,SonicSense: Unleash your intuition – feel the subtle vibrations of the world around you.
+147,PowerStream,2018-05-19,2018-06-18,PowerStream: Unleash your team's potential with intelligent automation and streamlined workflows.
+148,HarmonyCore,2018-05-27,2018-06-26,HarmonyCore: Unlock your potential with seamless integration and intuitive design for a truly connected experience.
+149,SmartHomeBrew,2018-06-06,2018-07-06,Transform your home into a haven of coffee and comfort with SmartHomeBrew – the ultimate smart coffee experience.
+150,SmartHome Hub,2018-06-20,2018-07-20,"Simplify your life and elevate your home with the SmartHome Hub – the central control for a connected, comfortable, and secure living space."
+151,SmartHome,2018-07-02,2018-08-01,"Transform your home into a smarter, safer, and more comfortable space with SmartHome."
+152,Smart Home Eco,2018-07-22,2018-08-21,Transform your home into a sustainable sanctuary with Smart Home Eco – effortlessly reducing your environmental impact.
+153,SmartHomeBoost,2018-08-09,2018-09-08,"Elevate your home's comfort, security, and efficiency with SmartHomeBoost – effortlessly integrating intelligent technology for a smarter, more livable space."
+154,SmartHome,2018-08-17,2018-09-16,"Transform your home into a connected sanctuary with SmartHome – simplify your life, enhance your security, and elevate your comfort."
+155,Smart Light,2018-09-05,2018-10-05,Transform your space with Smart Light – effortlessly control and customize your illumination with ease.
+156,Smart Home Hub,2018-09-19,2018-10-19,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting your devices and bringing effortless automation to your life.
+157,Connectify,2018-10-01,2018-10-31,Connectify: Seamlessly connect with your audience and amplify your impact.
+158,PowerUp,2018-10-19,2018-11-18,Unlock your potential with PowerUp – unleash your best self and achieve extraordinary results.
+159,Portable Powerhouse,2018-11-08,2018-12-08,Unleash boundless power and freedom with Portable Powerhouse – your ultimate portable charging solution.
+160,SmartBrew,2018-11-26,2018-12-26,Unlock your perfect brew with SmartBrew – effortlessly create coffee tailored to your taste.
+161,Gaming Console Focus,2018-12-12,2019-01-11,Unleash unparalleled immersion and competitive edge with Gaming Console Focus – where your game awaits.
+162,SmartFlow,2018-12-22,2019-01-21,SmartFlow: Streamline your workflow and maximize efficiency with intelligent automation.
+163,Advanced Wireless,2019-01-05,2019-02-04,Unleash seamless connectivity and unparalleled performance with Advanced Wireless.
+164,Eco Streamline,2019-01-19,2019-02-18,"Eco Streamline: Simplify your life, protect our planet – one sustainable choice at a time."
+165,BlendWise,2019-01-30,2019-03-01,BlendWise: Unlock effortless workflow optimization and boost your team’s productivity with intelligent automation.
+166,SmartCharge,2019-02-19,2019-03-21,"SmartCharge: Unleash your productivity with effortless, lightning-fast charging."
+167,Gaming Core,2019-03-01,2019-03-31,Unleash your inner hero with Gaming Core – where immersive gameplay meets unparalleled performance.
+168,Convection Oven,2019-03-08,2019-04-07,"Convection Oven: Unleash perfectly cooked food, faster and with richer flavor."
+169,EcoVision,2019-03-15,2019-04-14,"EcoVision: See the future of sustainable living, beautifully."
+170,Connectivity,2019-03-29,2019-04-28,Connectivity: Seamlessly connect with what matters most.
+171,ChillBox,2019-04-12,2019-05-12,"ChillBox: Unwind, recharge, and rediscover your calm with curated moments of peace."
+172,Smart Home Hub,2019-04-27,2019-05-27,Simplify your life and elevate your home with the Smart Home Hub – your central command for effortless comfort and security.
+173,SmartBrew,2019-05-13,2019-06-12,"SmartBrew: Effortlessly craft the perfect cup, every time, with personalized brewing profiles."
+174,…Connected Future,2019-05-27,2019-06-26,"Unite with us to build a brighter, more connected future – powered by innovation and collaboration."
+175,PowerSource,2019-06-03,2019-07-03,Unleash your potential with PowerSource – accelerate your goals and achieve remarkable results.
+176,SmartHome & Tech,2019-06-19,2019-07-19,"Transform your home into a smart sanctuary with our campaign, seamlessly blending technology and comfort."
+177,Smart Kitchen,2019-06-26,2019-07-26,Transform your kitchen into a haven of effortless cooking with Smart Kitchen – simplifying meal preparation and elevating your culinary experience.
+178,Memory Surge,2019-07-07,2019-08-06,Unlock your hidden potential and rediscover your most cherished memories with Memory Surge.
+179,Portable Tech Hub,2019-07-21,2019-08-20,Unlock seamless productivity and entertainment wherever you go with the Portable Tech Hub.
+180,EcoTech Gear,2019-08-07,2019-09-06,"EcoTech Gear: Sustainable solutions for a better tomorrow, crafted with innovation and responsibility."
+181,SmartHome Core,2019-08-18,2019-09-17,SmartHome Core: Simplify your life and maximize your home’s potential with seamless automation.
+182,PulseStream,2019-08-26,2019-09-25,"PulseStream: Unlock seamless, intelligent data flows for faster decision-making and optimized operations."
+183,Smart Home Hub,2019-09-05,2019-10-05,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling every aspect of your living space.
+184,SonicBrew,2019-09-17,2019-10-17,SonicBrew: Unleash your inner speedster with the ultimate coffee experience.
+185,Adaptive Comfort,2019-10-05,2019-11-04,"Adaptive Comfort: Experience tailored comfort, perfectly suited to your every need."
+186,SonicPulse,2019-10-16,2019-11-15,SonicPulse: Unleash your creativity with immersive audio experiences that pulse with energy.
+187,SmartHome Hub,2019-10-27,2019-11-26,"Simplify your life and elevate your home with the SmartHome Hub – seamlessly connecting your devices for a smarter, safer, and more comfortable living space."
+188,Efficiency,2019-11-11,2019-12-11,Maximize your productivity and achieve more with Efficiency – simplify your workflow and unlock your full potential.
+189,…Powerhouse 4K,2019-12-01,2019-12-31,Powerhouse 4K: Unleash breathtaking visuals and immersive audio – experience the difference.
+190,Nova Stream,2019-12-14,2020-01-13,"Nova Stream: Unleash your creativity with seamless, intuitive streaming and collaboration tools."
+191,Connected Wellness,2019-12-27,2020-01-26,"Unlock your holistic well-being with Connected Wellness – a journey towards a healthier, happier you."
+192,Sentinel Watch,2020-01-11,2020-02-10,Sentinel Watch: Protect your peace of mind with unparalleled security and proactive insights.
+193,SonicBoost,2020-01-20,2020-02-19,Unleash your inner speed with SonicBoost – experience unparalleled performance and unleash your potential!
+194,Smart Home Hub,2020-02-06,2020-03-07,"Simplify your life and unlock a smarter home with the Smart Home Hub – your connected home, effortlessly."
+195,Smart Home Hub,2020-02-19,2020-03-20,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything you own.
+196,SmartBeam,2020-03-09,2020-04-08,SmartBeam: Illuminate your life with intelligent lighting that adapts to your needs.
+197,ProSonic,2020-03-29,2020-04-28,ProSonic: Unleash your audio potential with unparalleled clarity and precision.
+198,SonicPulse,2020-04-10,2020-05-10,Unleash your inner speed with SonicPulse – experience unparalleled audio clarity and immersive soundscapes.
+199,Smart Home Hub,2020-04-26,2020-05-26,"Simplify your life and elevate your home with the Smart Home Hub – your connected life, effortlessly."
+200,SmartHome Hub,2020-05-15,2020-06-14,"Simplify your life and elevate your home with the SmartHome Hub – your central control for a smarter, safer, and more comfortable living space."
+201,Smart Kitchen,2020-06-03,2020-07-03,Transform your kitchen into a haven of effortless cooking with Smart Kitchen – simplifying every meal.
+202,SmartScale,2020-06-16,2020-07-16,SmartScale: Unlock personalized wellness insights to effortlessly achieve your health goals.
+203,Ultra Fitness Tracker,2020-07-03,2020-08-02,"Unlock your potential with Ultra Fitness Tracker – track, analyze, and conquer your goals with unparalleled precision."
+204,SmartHome,2020-07-20,2020-08-19,Simplify your life and elevate your home with SmartHome – seamlessly connected technology for a truly comfortable living space.
+205,SmartHome Hub,2020-07-27,2020-08-26,Simplify your life and unlock a connected home with the SmartHome Hub – your central command for effortless automation and seamless living.
+206,Soundscape,2020-08-09,2020-09-08,Unleash your focus with Soundscape – create your perfect environment for productivity and relaxation.
+207,Gaming Console,2020-08-19,2020-09-18,Unleash unparalleled gaming with the all-new console – experience immersive worlds and epic adventures like never before.
+208,SonicPulse,2020-09-03,2020-10-03,SonicPulse: Unleash your creativity with immersive audio experiences that pulse with life.
+209,SmartKitchen,2020-09-21,2020-10-21,Simplify your cooking and elevate your home with SmartKitchen – intelligent tools for delicious results.
+210,SmartSense,2020-10-06,2020-11-05,"SmartSense: Simplify your workflow, boost your productivity, and unlock seamless efficiency."
+211,SmartHome Core,2020-10-21,2020-11-20,"Simplify your life and elevate your home with SmartHome Core – seamlessly connecting your devices for a smarter, more comfortable living experience."
+212,Gaming Touchscreen,2020-11-02,2020-12-02,Level up your gameplay with the Gaming Touchscreen – experience unmatched immersion and control.
+213,Advanced Tech Hub,2020-11-19,2020-12-19,Unlock your potential with Advanced Tech Hub – your comprehensive resource for seamless technology integration and growth.
+214,SmartHomeLight,2020-12-08,2021-01-07,"Transform your home with SmartHomeLight – effortless lighting, personalized comfort, and unparalleled control, all in one."
+215,SmartHome,2020-12-19,2021-01-18,"Transform your home into a smarter, safer, and more comfortable space with SmartHome."
+216,Sonic Bloom,2020-12-30,2021-01-29,"Unleash your inner wonder with Sonic Bloom – a vibrant, immersive experience that blends stunning visuals and captivating soundscapes to ignite your imagination."
+217,Smart Home Hub,2021-01-10,2021-02-09,Simplify your life and maximize your comfort with the Smart Home Hub – your central command for a seamlessly connected and effortlessly intelligent home.
+218,UltraTech Solutions,2021-01-22,2021-02-21,UltraTech Solutions: Empowering businesses with intelligent technology to drive innovation and maximize efficiency.
+219,SonicSense,2021-02-01,2021-03-03,Uncover hidden patterns and anticipate danger with SonicSense – your proactive awareness system.
+220,SmartLight,2021-02-20,2021-03-22,Illuminate your life with SmartLight – effortlessly customize your ambiance and maximize energy savings.
+221,AudioSense,2021-03-04,2021-04-03,AudioSense: Immerse yourself in sound with unparalleled clarity and personalized audio experiences.
+222,SmartKitchen Hub,2021-03-12,2021-04-11,"Simplify your kitchen with SmartKitchen Hub – seamlessly connect, control, and optimize every step of your cooking."
+223,SmartHome,2021-03-30,2021-04-29,Transform your home into a smart sanctuary with SmartHome – simplifying your life and elevating your comfort.
+224,PowerBoost Gaming,2021-04-12,2021-05-12,Unleash your gaming potential with PowerBoost Gaming – maximizing every level and experience!
+225,Smart Home Pro,2021-04-27,2021-05-27,Transform your home into a seamlessly intelligent sanctuary with Smart Home Pro.
+226,Smart Home Hub,2021-05-13,2021-06-12,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling all your devices.
+227,Smart Home Hub,2021-05-29,2021-06-28,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting your devices for unparalleled convenience.
+228,ProSync Home Hub,2021-06-06,2021-07-06,Simplify your smart home with ProSync Home Hub – seamlessly connecting and controlling all your devices for ultimate convenience.
+229,Connected Comfort,2021-06-14,2021-07-14,Connected Comfort: Experience unparalleled relaxation with seamless integration and personalized wellbeing.
+230,PowerPulse,2021-06-27,2021-07-27,Unleash your potential with PowerPulse – accelerate your results and experience peak performance.
+231,SmartHome Hub,2021-07-13,2021-08-12,Simplify your life and elevate your home with the SmartHome Hub – your central control for a seamlessly connected and intelligently automated living space.
+232,SmartHomeSync,2021-07-22,2021-08-21,"Simplify your life and elevate your home with SmartHomeSync – seamlessly connecting your devices for a smarter, more comfortable living space."
+233,Power Surge,2021-08-01,2021-08-31,"Power Surge: Unleash your potential, safely and reliably, with our advanced surge protection."
+234,Smart Glow,2021-08-11,2021-09-10,Smart Glow: Unleash your natural radiance with personalized skincare that adapts to *you*.
+235,SmartHomeCam,2021-08-23,2021-09-22,Unlock effortless home security and peace of mind with SmartHomeCam – your intelligent security solution.
+236,Smart Home Hub,2021-09-02,2021-10-02,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything you own.
+237,SmartHome,2021-09-09,2021-10-09,Transform your home into a connected sanctuary with SmartHome – simplifying your life and maximizing your comfort.
+238,SmartHome,2021-09-27,2021-10-27,"Simplify your life and elevate your home with SmartHome – seamlessly connect, control, and automate everything."
+239,SmartHomeLens,2021-10-04,2021-11-03,"Transform your home into a seamless, intelligent space with SmartHomeLens."
+240,Connectify,2021-10-23,2021-11-22,"Connectify: Seamlessly build stronger relationships, boost productivity, and unlock new opportunities."
+241,Smart Home Hub,2021-11-09,2021-12-09,Simplify your life and elevate your home with the Smart Home Hub – your central command for effortless automation and seamless living.
+242,EcoQLED,2021-11-21,2021-12-21,"EcoQLED: Experience stunning visuals with a brighter, more sustainable future."
+243,Smart Home Core,2021-12-09,2022-01-08,Simplify your life and elevate your home with Smart Home Core – seamlessly connect and control everything with intuitive automation.
+244,Sonic Breeze,2021-12-22,2022-01-21,Unleash your inner speed with Sonic Breeze – a revitalizing scent that electrifies your senses and invigorates your day.
+245,QLED+Smart,2022-01-06,2022-02-05,Unleash breathtaking visuals and immersive experiences with QLED+ Smart – the future of entertainment.
+246,Smart Home Hub,2022-01-23,2022-02-22,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything you need.
+247,Smoke Detector.,2022-02-04,2022-03-06,Protect your loved ones and peace of mind with our smoke detector – your reliable early warning system.
+248,UltraSecureFlash,2022-02-16,2022-03-18,Unleash your data’s security with UltraSecureFlash – protect what matters most with unparalleled speed and peace of mind.
+249,SmartBrew,2022-02-25,2022-03-27,"Unlock personalized coffee perfection with SmartBrew – effortlessly brew the perfect cup, every time."
+250,SmartHome Hub,2022-03-06,2022-04-05,"Simplify your life and elevate your home with the SmartHome Hub – your central command for a smarter, safer, and more connected living space."
+251,Portable Powerhouse,2022-03-13,2022-04-12,Unleash your potential with Portable Powerhouse – power up your life wherever you go!
+252,Smart Home Hub,2022-04-02,2022-05-02,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything.
+253,Smart Connect,2022-04-13,2022-05-13,Unlock seamless connectivity and effortless organization with Smart Connect – simplify your life today.
+254,Smart Home Hub,2022-04-26,2022-05-26,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting your devices for effortless control and enhanced comfort.
+255,ProFlow,2022-05-13,2022-06-12,"ProFlow: Streamline your workflow, boost productivity, and achieve seamless results."
+256,Connected Experience,2022-05-26,2022-06-25,"Unlock seamless, personalized interactions across all touchpoints to drive deeper engagement and loyalty."
+257,Immersive View,2022-06-09,2022-07-09,Unleash your imagination with Immersive View – experience reality like never before.
+258,SmartHome Camera,2022-06-29,2022-07-29,"Secure your home and simplify your life with the SmartHome Camera – your eyes and peace of mind, all in one."
+259,CoolTech Hub,2022-07-11,2022-08-10,Unlock your potential with CoolTech Hub – the ultimate resource for innovation and collaboration.
+260,SmartSync,2022-07-23,2022-08-22,Unlock seamless productivity with SmartSync – effortlessly connect your devices and streamline your workflow.
+261,Connect,2022-07-30,2022-08-29,Connect: Forge meaningful connections and unlock new possibilities.
+262,Energy Surge,2022-08-08,2022-09-07,Unleash your potential with Energy Surge – a burst of focused energy to power through your day.
+263,Smart Home Camera,2022-08-18,2022-09-17,"Secure your peace of mind with SmartHome Camera – effortlessly monitor your home, big or small."
+264,SmartHome Gear,2022-08-28,2022-09-27,"Elevate your life with SmartHome Gear – seamlessly connect, simplify, and transform your home."
+265,SmartHomeTech,2022-09-06,2022-10-06,"SmartHomeTech: Simplify your life, enhance your home, and unlock a smarter future."
+266,SmartHomeSense,2022-09-24,2022-10-24,Unlock effortless living with SmartHomeSense – simplify your home and elevate your life.
+267,EnergySaver,2022-10-05,2022-11-04,"Unlock effortless energy savings with EnergySaver – save money, protect the planet, and live smarter."
+268,EnergyBoost,2022-10-24,2022-11-23,Unlock your potential with EnergyBoost – experience sustained vitality and laser focus.
+269,SmartHome Hub,2022-11-02,2022-12-02,Simplify your life and elevate your home with the SmartHome Hub – your central command for a connected and comfortable living space.
+270,Ultra Power Lens,2022-11-13,2022-12-13,Unleash your vision with Ultra Power Lens – see the unseen and capture brilliance like never before.
+271,Pro QLED Pulse,2022-11-28,2022-12-28,Experience breathtaking visuals with the revolutionary Pro QLED Pulse – where true colors leap and detail shines.
+272,SmartLight,2022-12-16,2023-01-15,"Transform your space with SmartLight – effortless lighting, intelligent comfort, and unparalleled convenience."
+273,Smart Home Hub,2022-12-31,2023-01-30,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything.
+274,Smart Kitchen,2023-01-18,2023-02-17,Transform your kitchen into a haven of effortless cooking with Smart Kitchen.
+275,Smart Home Hub,2023-02-03,2023-03-05,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything you need.
+276,Black Ice Maker,2023-02-11,2023-03-13,Unleash your inner thrill with Black Ice Maker – where darkness and danger collide.
+277,Smart Home Hub,2023-02-22,2023-03-24,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting your devices for a truly intelligent and comfortable living space.
+278,Portable Power,2023-03-01,2023-03-31,"Unleash your day with Portable Power – power on the go, effortlessly."
+279,Echo,2023-03-19,2023-04-18,Echo: Unlock your potential with a resonant connection to your goals.
+280,Smart Home Hub,2023-04-05,2023-05-05,Simplify your life and enhance your home with the Smart Home Hub – seamlessly connecting and controlling all your devices.
+281,Visual Clarity,2023-04-12,2023-05-12,Visual Clarity: Uncover the hidden insights in your data with breathtaking clarity.
+282,Eco Smart Power,2023-04-26,2023-05-26,Eco Smart Power: Power your life sustainably.
+283,SmartHomeLens,2023-05-12,2023-06-11,"Transform your home into a connected, secure, and effortlessly-managed ecosystem with SmartHomeLens."
+284,Smart Home Hub,2023-06-01,2023-07-01,Simplify your life and elevate your home with the Smart Home Hub – effortlessly connecting and controlling everything.
+285,Smart Home Hub,2023-06-14,2023-07-14,Simplify your life and elevate your home with the Smart Home Hub – your central command for a seamlessly connected and effortlessly convenient living space.
+286,Hydrate & Health,2023-06-27,2023-07-27,Unlock your best self with Hydrate & Health – simple ways to nourish your body and thrive.
+287,SmartHome Hub,2023-07-07,2023-08-06,Simplify your life and unlock a smarter home with the SmartHome Hub.
+288,SmartHome,2023-07-23,2023-08-22,Simplify your life and elevate your home with SmartHome – effortless automation and intuitive control.
+289,SmartSense,2023-08-02,2023-09-01,"SmartSense: Simplify your home, enhance your life."
+290,EcoConnect,2023-08-14,2023-09-13,"EcoConnect: Connect with a sustainable future, effortlessly."
+291,“Momentum Pulse”,2023-08-24,2023-09-23,Unlock your potential with Momentum Pulse – a dynamic and personalized approach to accelerate your growth.
+292,Smart Home Hub,2023-09-10,2023-10-10,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything.
+293,Smart Home Hub.,2023-09-27,2023-10-27,Simplify your life and elevate your home with the Smart Home Hub – it seamlessly connects and controls everything.
+294,SonicFlow,2023-10-05,2023-11-04,SonicFlow: Unleash your team’s potential with seamless workflows and effortless collaboration.
+295,SmartBrew,2023-10-21,2023-11-20,"Unlock your perfect coffee with SmartBrew – automated brewing, personalized profiles, and effortless enjoyment."
+296,SmartHome,2023-11-10,2023-12-10,Transform your home into a connected sanctuary with SmartHome – simplify your life and elevate your living space.
+297,Portable Power,2023-11-22,2023-12-22,Unleash your day: Power up wherever life takes you with Portable Power.
+298,Power Surge,2023-12-11,2024-01-10,Power Surge: Protect your devices and your peace of mind with a surge protector.
+299,SmartHome Hub,2023-12-20,2024-01-19,Simplify your life and elevate your home with the SmartHome Hub – seamlessly connecting and controlling everything.
+300,Smart Kitchen Hub,2023-12-27,2024-01-26,Simplify your cooking with Smart Kitchen Hub – seamlessly connecting your appliances for effortless meal creation.
+301,SonicFlow,2024-01-12,2024-02-11,SonicFlow: Unleash your team's potential with seamless workflow and optimized collaboration.
+302,PixelPulse,2024-02-01,2024-03-02,Unleash your creative potential with PixelPulse – where intuitive design meets seamless innovation.
+303,SmartHome Pulse,2024-02-19,2024-03-20,"Transform your home into a responsive, comfortable, and secure ecosystem with SmartHome Pulse."
+304,SmartHome Hub,2024-03-04,2024-04-03,Simplify your home and enhance your life with the SmartHome Hub – your central control for a connected and effortlessly intelligent living space.
+305,SonicSense,2024-03-19,2024-04-18,SonicSense: Unleash your inner detective – discover hidden details and uncover the truth with our revolutionary sensory technology.
+306,SonicPulse,2024-03-27,2024-04-26,Unleash unparalleled sonic clarity and immersive audio with SonicPulse – experience sound like never before.
+307,SmartHome,2024-04-07,2024-05-07,"Transform your home into a smart, secure, and comfortable oasis with SmartHome."
+308,Memory Lens,2024-04-26,2024-05-26,"Memory Lens: Capture your life's moments in stunning detail, effortlessly."
+309,SmartHome Core,2024-05-16,2024-06-15,Simplify your life and elevate your home with SmartHome Core – seamlessly connecting your devices for effortless control and enhanced comfort.
+310,AmbientCapture,2024-06-05,2024-07-05,AmbientCapture: Immerse yourself in a world of detail and rediscover your senses.
+311,SmartHome,2024-06-13,2024-07-13,"Transform your home into a smarter, safer, and more comfortable space with SmartHome."
+312,SmartHome Hub,2024-06-22,2024-07-22,"Simplify your life and elevate your home with the SmartHome Hub – your central control for a smarter, more connected living space."
+313,Smart Home,2024-07-03,2024-08-02,"Transform your home into a seamless, comfortable, and secure space with Smart Home."
+314,Smart Home,2024-07-18,2024-08-17,"Transform your home into a smart sanctuary with Smart Home, effortlessly simplifying your life and elevating your comfort."
+315,ProCon,2024-07-28,2024-08-27,ProCon: Choose the impact – make informed decisions for a better future.
+316,SmartHome Hub,2024-08-14,2024-09-13,Simplify your life and enhance your home with the SmartHome Hub – your central command for a truly connected living experience.
+317,Touch Screen Smart,2024-08-27,2024-09-26,Experience the future of interaction with Touch Screen Smart – intuitive technology that elevates every moment.
+318,Modern Refresh,2024-09-08,2024-10-08,Rediscover your best self with Modern Refresh – a revitalizing transformation for your style and life.
+319,ProSonic Hub,2024-09-28,2024-10-28,ProSonic Hub: Seamlessly connect your devices and amplify your productivity.
+320,Smart Home Hub,2024-10-09,2024-11-08,Simplify your life and elevate your home with the Smart Home Hub – seamlessly connecting and controlling everything.
+321,SmartHomeBrew,2024-10-29,2024-11-28,"Elevate your coffee ritual with SmartHomeBrew – seamlessly connected, perfectly brewed, and effortlessly enjoyable."
+322,SonicShield,2024-11-05,2024-12-05,SonicShield: Defend your digital world with unparalleled protection against cyber threats.
+323,CleanSweep,2024-11-19,2024-12-19,"CleanSweep: Transform your home, effortlessly."
+324,SmartHome Slow Cook,2024-12-01,2024-12-31,"Simplify your life and savor delicious, perfectly cooked meals with the SmartHome Slow Cook – effortlessly."
+325,EcoTech Hub,2024-12-20,2025-01-19,"EcoTech Hub: Build a sustainable future, one innovative solution at a time."
+326,Smart Home Hub,2025-01-01,2025-01-31,"Transform your home into a connected sanctuary with the Smart Home Hub – effortless control, ultimate comfort, and unparalleled security."
+327,SonicFlow,2025-01-12,2025-02-11,SonicFlow: Unleash your team's peak performance with intuitive workflow automation.
+328,Smart Home Hub,2025-01-26,2025-02-25,Simplify your life and elevate your home with the Smart Home Hub – effortlessly connecting and controlling everything you need.
+329,EcoFlow,2025-02-02,2025-03-04,"EcoFlow: Powering a sustainable future, one charge at a time."
+330,Smart Home Hub,2025-02-16,2025-03-18,Simplify your life and elevate your home with the Smart Home Hub – your central command for a seamlessly connected and intelligently managed living space.
+331,Focus,2025-02-26,2025-03-28,"Focus: Unlock your potential, one moment at a time."
+332,SmartHome Glow,2025-03-14,2025-04-13,"Transform your home into a vibrant, effortlessly stylish sanctuary with SmartHome Glow."
+333,“Nexus Pulse”,2025-03-22,2025-04-21,Nexus Pulse: Unlock your peak potential with a synchronized flow of inspiration and action.
+334,EcoSmartClean,2025-03-31,2025-04-30,"EcoSmartClean: Clean home, clean planet – effortlessly."
+335,NexusStream,2025-04-17,2025-05-17,"NexusStream: Seamlessly connect your data, amplify your insights, and unlock unparalleled business potential."
+336,SmartHome Aura,2025-05-06,2025-06-05,Transform your home into a sanctuary of comfort and security with SmartHome Aura – effortlessly intuitive automation and personalized comfort.
+337,Smart Home,2025-05-16,2025-06-15,"Transform your home into a smart sanctuary with Smart Home – effortless comfort and security, simplified."
+338,Sonic Breeze,2025-05-25,2025-06-24,"Unleash a vibrant, refreshing burst of energy with Sonic Breeze – your daily dose of pure sonic bliss."
+339,Ultra Smart Core,2025-06-13,2025-07-13,Unleash your potential with Ultra Smart Core – seamlessly connecting your world for unparalleled productivity and efficiency.
+340,Gaming SSD,2025-06-27,2025-07-27,Level up your gaming experience with lightning-fast speed and unmatched responsiveness.
+341,Touch_screen SmartHome,2025-07-11,2025-08-10,Transform your home with effortless control and personalized experiences through our Touch_screen SmartHome campaign.
+342,SmartHome,2025-07-26,2025-08-25,"Transform your home into a smart, secure, and effortless living space with SmartHome."
+343,Connected Home,2025-08-06,2025-09-05,"Unlock a smarter, safer, and more comfortable home with Connected Home."
+344,SmartHome Hub,2025-08-23,2025-09-22,"Simplify your life and elevate your home with the SmartHome Hub – your central control for a smarter, safer, and more comfortable living space."
+345,Smart Home,2025-09-11,2025-10-11,"Transform your home into a comfortable, secure, and efficient sanctuary with Smart Home."
+346,Connectivity,2025-09-27,2025-10-27,Connect seamlessly to your world – unlock limitless possibilities with Connectivity.
+347,Smart Home Hub,2025-10-10,2025-11-09,"Simplify your life and elevate your home with the Smart Home Hub – your central command for a connected, comfortable, and secure living space."
+348,UltraSound,2025-10-20,2025-11-19,"UltraSound: Unlock deeper insights, optimize performance, and achieve unmatched results."
+349,Sonic Bloom,2025-11-09,2025-12-09,"Unleash your inner magic with Sonic Bloom – a vibrant, immersive experience that transforms your world into a breathtaking garden."

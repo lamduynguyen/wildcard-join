@@ -12,16 +12,14 @@ auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
 auto AhoCorasick::GetRoot() -> ART::N * { return trie_->root; }
 
-void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, const PatternIndexType &keyword_aux_index,
+void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_aux_index,
                          ART::ThreadInfo &t) {
-  Key key;
-  key.set(keyword, keyword_size);
   auto new_tid = [&]() {
     auto it = pattern_.emplace_back(std::vector<PatternIndexType>{keyword_aux_index});
     return it - pattern_.begin();
   };
   auto upsert = [this, keyword_aux_index](TupleID tid) { pattern_[tid].emplace_back(keyword_aux_index); };
-  trie_->insert(key, new_tid, upsert, t);
+  trie_->insert(keyword, keyword_len, new_tid, upsert, t);
 }
 
 void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {

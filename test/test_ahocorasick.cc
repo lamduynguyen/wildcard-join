@@ -10,10 +10,9 @@ TEST(TestAhoCorasick, SuffixLink) {
   auto trie    = aho_corasick::AhoCorasick();
 
   // Insert dataset
-  Key key;
   auto t   = trie.Local();
   auto idx = 0UL;
-  for (auto &keyword : dataset) { trie.Insert(keyword.data(), keyword.size(), {idx++, 0, keyword.size()}, t); }
+  for (auto &keyword : dataset) { trie.Insert(keyword.data(), keyword.size() + 1, {idx++, 0, keyword.size() + 1}, t); }
 
   // Building suffix & output links
   trie.BuildSuffixLink(1);

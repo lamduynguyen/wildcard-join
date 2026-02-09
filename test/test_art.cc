@@ -4,69 +4,57 @@
 #include "gtest/gtest.h"
 
 TEST(TestArt, InsertAndQuery) {
-  auto dataset   = std::vector<std::string>{"abcdef", "xxxx", "aba", "ab"};
-  auto load_key  = [&](TupleID tid, Key &key) { key.set(dataset[tid].c_str(), dataset[tid].size()); };
-  auto check_key = [&](const TupleID tid, const Key &k) {
-    Key cmp_key;
-    cmp_key.set(dataset[tid].c_str(), dataset[tid].size());
-    return k == cmp_key;
-  };
-  auto trie = ART::Tree();
+  auto dataset = std::vector<std::string>{"abcdef", "xxxx", "aba", "ab"};
+  auto trie    = ART::Tree();
 
   // Insert dataset
-  Key key;
+  std::string key;
   auto t = trie.getThreadInfo();
   for (auto idx = 0U; idx < dataset.size(); idx++) {
-    load_key(idx, key);
-    trie.insert(key, [&]() { return idx; }, [](TupleID) {}, t);
-    auto leaf = trie.lookup(key, t);
+    key = dataset[idx];
+    trie.insert(key.c_str(), key.size() + 1, [&]() { return idx; }, [](TupleID) {}, t);
+    auto leaf = trie.lookup(key.c_str(), key.size() + 1, t);
     ASSERT_NE(leaf, nullptr);
-    ASSERT_TRUE(check_key(leaf->aux_index, key));
+    ASSERT_EQ(dataset[leaf->aux_index], key);
   }
 
   // Another separate search
   for (auto idx = 0U; idx < dataset.size(); idx++) {
-    key.set(dataset[idx].c_str(), dataset[idx].size());
-    auto leaf = trie.lookup(key, t);
+    key       = dataset[idx];
+    auto leaf = trie.lookup(key.c_str(), key.size() + 1, t);
+    ASSERT_NE(leaf, nullptr);
     ASSERT_EQ(leaf->aux_index, idx);
   }
 
   // Wrong search
   auto false_keywords = std::vector<std::string>{"abc", "xxx"};
   for (auto &keyword : false_keywords) {
-    key.set(keyword.c_str(), keyword.size());
-    auto leaf = trie.lookup(key, t);
+    auto leaf = trie.lookup(keyword.c_str(), keyword.size() + 1, t);
     ASSERT_EQ(leaf, nullptr);
   }
 }
 
 TEST(TestArt, InsertMany) {
-  auto keywords  = LoadTestWords();
-  auto load_key  = [&](TupleID tid, Key &key) { key.set(keywords[tid].c_str(), keywords[tid].size()); };
-  auto check_key = [&](const TupleID tid, const Key &k) {
-    Key cmp_key;
-    cmp_key.set(keywords[tid].c_str(), keywords[tid].size());
-    return k == cmp_key;
-  };
-  auto trie = ART::Tree();
+  auto keywords = LoadTestWords();
+  auto trie     = ART::Tree();
 
-  Key key;
+  std::string key;
   auto t = trie.getThreadInfo();
   for (auto line = 0U; line < keywords.size(); line++) {
-    load_key(line, key);
-    trie.insert(key, [&]() { return line; }, [](TupleID) {}, t);
-    auto leaf = trie.lookup(key, t);
+    key = keywords[line];
+    trie.insert(key.c_str(), key.size(), [&]() { return line; }, [](TupleID) {}, t);
+    auto leaf = trie.lookup(key.c_str(), key.size(), t);
     ASSERT_NE(leaf, nullptr);
     ASSERT_EQ(leaf->aux_index, line);
-    ASSERT_TRUE(check_key(leaf->aux_index, key));
+    ASSERT_TRUE(keywords[leaf->aux_index] == key);
   }
 
   // Test again
   for (auto line = 0U; line < keywords.size(); line++) {
-    load_key(line, key);
-    auto leaf = trie.lookup(key, t);
+    key       = keywords[line];
+    auto leaf = trie.lookup(key.c_str(), key.size(), t);
     ASSERT_EQ(leaf->aux_index, line++);
-    ASSERT_TRUE(check_key(leaf->aux_index, key));
+    ASSERT_TRUE(keywords[leaf->aux_index] == key);
   }
 }
 

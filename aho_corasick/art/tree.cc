@@ -3,7 +3,6 @@
 #include <ranges>
 
 #include "art/epoche.h"
-#include "art/key.h"
 #include "art/node.h"
 #include "art/tree.h"
 
@@ -26,7 +25,7 @@ void Tree::yield(int count) const {
     _mm_pause();
 }
 
-Leaf *Tree::lookup(const Key &k, ThreadInfo &threadEpocheInfo) const {
+Leaf *Tree::lookup(const char *keyword, uint64_t keyword_len, ThreadInfo &threadEpocheInfo) const {
   EpocheGuardReadonly epocheGuard(threadEpocheInfo);
   int restartCount = 0;
 restart:
@@ -42,9 +41,9 @@ restart:
   v    = node->readLockOrRestart(needRestart);
   if (needRestart) goto restart;
   while (true) {
-    if (k.getKeyLen() <= level) { return nullptr; }
+    if (keyword_len <= level) { return nullptr; }
     parentNode = node;
-    node       = N::getChild(k[level], parentNode);
+    node       = N::getChild(keyword[level], parentNode);
     parentNode->checkOrRestart(v, needRestart);
     if (needRestart) goto restart;
 
@@ -54,7 +53,8 @@ restart:
       if (needRestart) goto restart;
 
       auto leaf = N::getLeaf(node);
-      return ((*leaf) == k) ? leaf : nullptr;
+      auto ret  = leaf->equal(reinterpret_cast<const uint8_t *>(keyword), keyword_len);
+      return (ret) ? leaf : nullptr;
     }
     level++;
 

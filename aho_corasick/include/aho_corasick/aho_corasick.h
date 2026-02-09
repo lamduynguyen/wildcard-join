@@ -70,8 +70,7 @@ class AhoCorasick {
   ~AhoCorasick() = default;
 
   auto Local() -> ART::ThreadInfo;
-  void Insert(const char *keyword_data, uint64_t keyword_size, const PatternIndexType &keyword_aux_index,
-              ART::ThreadInfo &t);
+  void Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_aux_index, ART::ThreadInfo &t);
   void BuildSuffixLink(u16 number_of_threads);
 
   // Two way to parse a text: One-round or iteratively

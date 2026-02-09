@@ -10,15 +10,16 @@
 
 #include <malloc.h>
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <utility>
 
 #include "art/epoche.h"
-#include "art/key.h"
 
-using TupleID = uint64_t;
+using TupleID                            = uint64_t;
+static constexpr uint8_t NULL_TERMINATOR = '\0';
 
 #define DEFINE_NODE_LINK_FUNCTIONS(CLASS)       \
   void setSuffixLink(N *n) { links[0] = n; }    \
@@ -203,9 +204,10 @@ struct Leaf {
     return key[i];
   }
 
-  inline bool operator==(const Key &k) const {
-    if (k.getKeyLen() != key_len) { return false; }
-    return std::memcmp(&k[0], key, key_len) == 0;
+  template <typename byte_t>
+  inline bool equal(const byte_t *keyword, uint32_t keyword_size) const {
+    if (keyword_size != key_len) { return false; }
+    return std::memcmp(keyword, key, key_len) == 0;
   }
 
  private:

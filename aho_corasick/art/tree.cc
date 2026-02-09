@@ -9,7 +9,8 @@
 
 namespace ART {
 
-Tree::Tree() : root(new N256()) {}
+// TODO: Should we consider null to be a codepoint end?
+Tree::Tree() : root(N256::makeNode(true)) {}
 
 Tree::~Tree() {
   N::deleteChildren(root);

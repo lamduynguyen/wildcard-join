@@ -74,7 +74,7 @@ class Tree {
             auto range = std::views::iota(level + 1, k.getKeyLen()) | std::views::reverse;
             for (auto idx : range) {
               auto aboveKey = k[idx];
-              auto n4       = new N4();
+              auto n4       = N4::makeNode(true);
               n4->insert(aboveKey, lastNode);
               lastNode = n4;
             }
@@ -107,7 +107,7 @@ class Tree {
         }
 
         // Create new inner node to replace the leaf
-        auto iterNode = new N4();
+        auto iterNode = N4::makeNode(true);
         N::change(node, nodeKey, iterNode);
         level++;
         assert(level < leaf->key_len);  // prevent inserting when prefix of key exists already
@@ -115,7 +115,7 @@ class Tree {
         uint32_t prefixLength = 0;
         for (; (*leaf)[level + prefixLength] == k[level + prefixLength]; prefixLength++) {
           auto nodeKey = k[level + prefixLength];
-          auto n4      = new N4();
+          auto n4      = N4::makeNode(true);
           iterNode->insert(nodeKey, n4);
           iterNode = n4;
         }

@@ -190,29 +190,35 @@ class N {
 };
 
 struct Leaf {
-  uint64_t aux_index;
-  uint32_t key_len;
+  uint64_t auxIndex;
+  uint32_t keyLen;
   uint8_t key[];
 
-  static auto MakeLeaf(const uint8_t *original_key, uint32_t key_len, uint64_t aux_index) {
-    void *mem = operator new(sizeof(Leaf) + key_len);
-    return new (mem) Leaf(original_key, key_len, aux_index);
+  static auto MakeLeaf(const uint8_t *originalKey, uint32_t keyLen, bool mustAppendNull, uint64_t auxIndex) {
+    void *mem = operator new(sizeof(Leaf) + keyLen + mustAppendNull);
+    auto leaf = new (mem) Leaf(originalKey, keyLen, auxIndex);
+    if (mustAppendNull) {
+      leaf->key[keyLen] = NULL_TERMINATOR;
+      leaf->keyLen++;
+    }
+    return leaf;
   }
 
   inline const uint8_t &operator[](std::size_t i) const {
-    assert(i < key_len);
+    assert(i < keyLen);
     return key[i];
   }
 
   template <typename byte_t>
-  inline bool equal(const byte_t *keyword, uint32_t keyword_size) const {
-    if (keyword_size != key_len) { return false; }
-    return std::memcmp(keyword, key, key_len) == 0;
+  inline bool equal(const byte_t *keyword, uint32_t keywordSize, bool requiresNullTerminated) const {
+    assert(keyLen > 0 && key[keyLen - 1] == NULL_TERMINATOR);
+    if (keywordSize + requiresNullTerminated != keyLen) { return false; }
+    return std::memcmp(keyword, key, keyLen - requiresNullTerminated) == 0;
   }
 
  private:
-  Leaf(const uint8_t *original_key, uint32_t key_len, uint64_t aux_index) : aux_index(aux_index), key_len(key_len) {
-    memcpy(this->key, original_key, key_len);
+  Leaf(const uint8_t *originalKey, uint32_t keyLen, uint64_t auxIndex) : auxIndex(auxIndex), keyLen(keyLen) {
+    memcpy(this->key, originalKey, keyLen);
   }
 };
 

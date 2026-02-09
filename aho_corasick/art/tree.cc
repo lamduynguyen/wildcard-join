@@ -18,14 +18,8 @@ Tree::~Tree() {
 
 ThreadInfo Tree::getThreadInfo() { return ThreadInfo(this->epoche); }
 
-void Tree::yield(int count) const {
-  if (count > 3)
-    sched_yield();
-  else
-    _mm_pause();
-}
-
-Leaf *Tree::lookup(const char *keyword, uint64_t keyword_len, ThreadInfo &threadEpocheInfo) const {
+Leaf *Tree::lookup(const char *keyword, uint64_t keywordLen, bool requiresNullTerminated,
+                   ThreadInfo &threadEpocheInfo) {
   EpocheGuardReadonly epocheGuard(threadEpocheInfo);
   int restartCount = 0;
 restart:
@@ -41,9 +35,9 @@ restart:
   v    = node->readLockOrRestart(needRestart);
   if (needRestart) goto restart;
   while (true) {
-    if (keyword_len <= level) { return nullptr; }
+    if (keywordLen + requiresNullTerminated <= level) { return nullptr; }
     parentNode = node;
-    node       = N::getChild(keyword[level], parentNode);
+    node       = N::getChild(getNextChar(keyword, keywordLen, requiresNullTerminated, level), parentNode);
     parentNode->checkOrRestart(v, needRestart);
     if (needRestart) goto restart;
 
@@ -53,7 +47,7 @@ restart:
       if (needRestart) goto restart;
 
       auto leaf = N::getLeaf(node);
-      auto ret  = leaf->equal(reinterpret_cast<const uint8_t *>(keyword), keyword_len);
+      auto ret  = leaf->equal(reinterpret_cast<const uint8_t *>(keyword), keywordLen, requiresNullTerminated);
       return (ret) ? leaf : nullptr;
     }
     level++;

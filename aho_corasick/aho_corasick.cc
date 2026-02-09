@@ -12,14 +12,16 @@ auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
 auto AhoCorasick::GetRoot() -> ART::N * { return trie_->root; }
 
-void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_aux_index,
+void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_auxIndex,
                          ART::ThreadInfo &t) {
-  auto new_tid = [&]() {
-    auto it = pattern_.emplace_back(std::vector<PatternIndexType>{keyword_aux_index});
+  assert(keyword_len > 0);
+  bool must_append_null = (keyword[keyword_len - 1] != NULL_TERMINATOR);
+  auto new_tid          = [&]() {
+    auto it = pattern_.emplace_back(std::vector<PatternIndexType>{keyword_auxIndex});
     return it - pattern_.begin();
   };
-  auto upsert = [this, keyword_aux_index](TupleID tid) { pattern_[tid].emplace_back(keyword_aux_index); };
-  trie_->insert(keyword, keyword_len, new_tid, upsert, t);
+  auto upsert = [this, keyword_auxIndex](TupleID tid) { pattern_[tid].emplace_back(keyword_auxIndex); };
+  trie_->insert(keyword, keyword_len, must_append_null, new_tid, upsert, t);
 }
 
 void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
@@ -122,7 +124,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
       // case #2: matching for 2nd case
       auto leaf = ART::N::getChild(NULL_TERMINATOR, possible_next);
       assert(ART::N::isLeaf(leaf));
-      auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
+      auto keyword_id = ART::N::getLeaf(leaf)->auxIndex;
       for (auto &pattern_idx : pattern_[keyword_id]) {
         result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
       }
@@ -134,7 +136,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
     if (output_link->isTerminalNode()) {
       auto leaf = ART::N::getChild(NULL_TERMINATOR, output_link);
       assert(ART::N::isLeaf(leaf));
-      auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
+      auto keyword_id = ART::N::getLeaf(leaf)->auxIndex;
       for (auto &pattern_idx : pattern_[keyword_id]) {
         result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
       }

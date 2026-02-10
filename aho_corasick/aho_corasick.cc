@@ -6,6 +6,8 @@
 
 namespace aho_corasick {
 
+std::atomic<u64> AhoCorasick::NUMBER_OF_UNIQUE_LITERALS = 0;
+
 AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART::Tree>()) {}
 
 auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
@@ -17,10 +19,16 @@ void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const Patter
   assert(keyword_len > 0);
   bool must_append_null = (keyword[keyword_len - 1] != NULL_TERMINATOR);
   auto new_tid          = [&]() {
-    auto it = pattern_.emplace_back(std::vector<PatternIndexType>{keyword_auxIndex});
-    return it - pattern_.begin();
+    auto new_tid    = NUMBER_OF_UNIQUE_LITERALS.fetch_add(1, std::memory_order_relaxed);
+    auto new_bitmap = roaring::Roaring64Map();
+    new_bitmap.add(keyword_auxIndex.ToUint());
+    literal_map_.emplace(new_tid, new_bitmap);
+    return new_tid;
   };
-  auto upsert = [this, keyword_auxIndex](TupleID tid) { pattern_[tid].emplace_back(keyword_auxIndex); };
+  auto upsert = [this, keyword_auxIndex](TupleID tid) {
+    assert(literal_map_.contains(tid));
+    literal_map_[tid].add(keyword_auxIndex.ToUint());
+  };
   trie_->insert(keyword, keyword_len, must_append_null, new_tid, upsert, t);
 }
 
@@ -123,11 +131,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
     if (ite.ptr->isTerminalNode()) {
       // case #2: matching for 2nd case
       auto leaf = ART::N::getChild(NULL_TERMINATOR, possible_next);
-      assert(ART::N::isLeaf(leaf));
-      auto keyword_id = ART::N::getLeaf(leaf)->auxIndex;
-      for (auto &pattern_idx : pattern_[keyword_id]) {
-        result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
-      }
+      AppendResult(ite, leaf, result);
     }
   }
   // Evaluate output links
@@ -135,11 +139,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
   while (output_link != nullptr) {
     if (output_link->isTerminalNode()) {
       auto leaf = ART::N::getChild(NULL_TERMINATOR, output_link);
-      assert(ART::N::isLeaf(leaf));
-      auto keyword_id = ART::N::getLeaf(leaf)->auxIndex;
-      for (auto &pattern_idx : pattern_[keyword_id]) {
-        result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
-      }
+      AppendResult(ite, leaf, result);
     }
     output_link = ART::N::getOutputLink(output_link);  // follow the suffix-link chain
   }
@@ -147,6 +147,18 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
   // Advance next offset in the text for next processing
   ite.next_offset++;
   return result;
+}
+
+void AhoCorasick::AppendResult(const IterativeParseText &ite, ART::N *leaf, OutputEmitType &out_result) {
+  assert(ART::N::isLeaf(leaf));
+  auto keyword_id  = ART::N::getLeaf(leaf)->auxIndex;
+  auto literal_len = ART::N::getLeaf(leaf)->keyLenWithoutNullTerminator();
+  auto match_pos   = ite.next_offset - literal_len + 1;
+  auto &bitmap     = literal_map_[keyword_id];
+  for (auto value : bitmap) {
+    auto pattern_idx = PatternIndexType::FromUint(value);
+    out_result.emplace(pattern_idx, literal_len, match_pos);
+  }
 }
 
 }  // namespace aho_corasick

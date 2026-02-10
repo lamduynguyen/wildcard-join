@@ -106,7 +106,7 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
 
   // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
   auto skeleton = aho_corasick::Skeleton(
-    p, plen, [&](aho_corasick::Token &tok) { trie.Insert(p + tok.start, tok.len, {0, tok.start, tok.len}, t); });
+    p, plen, [&](aho_corasick::Token &tok) { trie.Insert(p + tok.start, tok.len, {0, tok.start}, t); });
   if (skeleton.IsEmpty() || skeleton.OnlyWildcard()) {
     return aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, p, plen);
   }
@@ -146,10 +146,10 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
   // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
   std::vector<aho_corasick::Skeleton> skeleton;
   std::vector<aho_corasick::Skeleton::Matcher> instance;
-  for (auto idx = 0UL; idx < patterns.size(); idx++) {
+  for (auto idx = 0U; idx < patterns.size(); idx++) {
     auto &pat = patterns[idx];
     skeleton.emplace_back(pat.c_str(), pat.size(), [&](aho_corasick::Token &tok) {
-      trie.Insert(pat.c_str() + tok.start, tok.len, {idx, tok.start, tok.len}, t);
+      trie.Insert(pat.c_str() + tok.start, tok.len, {idx, tok.start}, t);
     });
     if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
       result[idx] = aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, pat.c_str(), pat.size());

@@ -16,13 +16,14 @@ static constexpr auto PERCENTAGE = '%';
 static constexpr auto UNDERSCORE = '_';
 
 struct Token {
-  u64 start;  // offset in the original string
-  u64 len;
+  static constexpr u32 WRONG_OFFSET = -1U;
+  u32 start;  // offset in the original string
+  u32 len;
 
   static inline auto IsDelim(char c) { return c == UNDERSCORE || c == PERCENTAGE; };
 
-  static auto NextToken(const char *s, size_t slen, std::size_t &pos, std::size_t &max_underscore_cnt) -> Token;
-  static auto NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token;
+  static auto NextToken(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> Token;
+  static auto NextSegment(const char *s, size_t slen, u32 &pos) -> Token;
 };
 
 // Per-pattern Skeleton
@@ -74,8 +75,8 @@ class Skeleton {
   struct Segment {
     std::vector<pat_off_t> literal_offset;
     ankerl::unordered_dense::map<pat_off_t, pat_off_t> lit_off_p;  // pos of an `offset` value within the above vector
-    u64 suffix_underscore_cnt;
-    u64 max_underscore_cnt;
+    u32 suffix_underscore_cnt;
+    u32 max_underscore_cnt;
     bool has_prefix_percent;
     bool has_suffix_percent;
 

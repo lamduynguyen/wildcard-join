@@ -257,8 +257,7 @@ int main() {
         } break;
         case BenchmarkVariant::AHO_CORASICK: {
           auto real_join_str = std::string(joinstr) + static_cast<char>(NULL_TERMINATOR);
-          trie.Insert(real_join_str.data(), real_join_str.size(),
-                      aho_corasick::PatternIndexType(idx, 0, joinstr.size()), trie_local);
+          trie.Insert(real_join_str.data(), real_join_str.size(), aho_corasick::PatternIndexType(idx, 0), trie_local);
         } break;
         case BenchmarkVariant::KMP: {
           aho_corasick::KMPAlgorithm kmp(joinstr);

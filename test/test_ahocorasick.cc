@@ -11,8 +11,8 @@ TEST(TestAhoCorasick, SuffixLink) {
 
   // Insert dataset
   auto t   = trie.Local();
-  auto idx = 0UL;
-  for (auto &keyword : dataset) { trie.Insert(keyword.data(), keyword.size(), {idx++, 0, keyword.size()}, t); }
+  auto idx = 0U;
+  for (auto &keyword : dataset) { trie.Insert(keyword.data(), keyword.size(), {idx++, 0}, t); }
 
   // Building suffix & output links
   trie.BuildSuffixLink(1);

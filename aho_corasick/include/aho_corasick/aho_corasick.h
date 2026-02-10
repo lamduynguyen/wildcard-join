@@ -7,7 +7,8 @@
 #include <vector>
 
 #include "gtest/gtest_prod.h"
-#include "tbb/concurrent_vector.h"
+#include "roaring/roaring.hh"
+#include "tbb/concurrent_unordered_map.h"
 
 #include "art/epoche.h"
 #include "art/tree.h"
@@ -19,29 +20,37 @@ namespace aho_corasick {
 /**
  * @brief We support scenario where one pattern may have more than one keywords
  * E.g., SQL condition `WHERE R.s LIKE '%' || 'Hello' || '%' || 'Welcome'`
- * In such scenarios, those keywords are uniquely identified using:
+ * In such scenarios, those literals are uniquely identified using:
  * - Pattern ID, i.e., Row ID of the relation `Pattern`
  * - (Matched) Offset within pattern
  * - (Matched) Offset within text
  *
- * Note that, a keyword may also appear multiple times across multiple patterns.
+ * Note that, a literal may also appear multiple times across multiple patterns.
+ * The first two properties are maintained in `struct PatternIndexType`, along with the literal's len.
+ * The last one is stored in `MatchingOutputType`, used for Aho-Corasick matching.
  */
 struct PatternIndexType {
-  u64 pattern_id;
-  u64 start_pos;    // Start position within pattern
-  u64 keyword_len;  // This is auxiliary info to help with matching phase later,
-                    // and no need to be used to determine uniqueness
+  u32 pattern_id;
+  u32 start_pos;  // Start position of this literal within pattern
 
-  PatternIndexType(u64 pattern_id, u64 offset_within_pt, u64 keyword_len)
-      : pattern_id(pattern_id), start_pos(offset_within_pt), keyword_len(keyword_len) {}
+  PatternIndexType(u32 pattern_id, u32 offset_within_pt) : pattern_id(pattern_id), start_pos(offset_within_pt) {}
+
+  auto ToUint() const { return (static_cast<u64>(pattern_id) << 32) | static_cast<u64>(start_pos); }
+
+  static PatternIndexType FromUint(u64 value) {
+    u32 pattern_id = static_cast<u32>(value >> 32);
+    u32 start_pos  = static_cast<u32>(value & 0xFFFFFFFFULL);
+    return PatternIndexType(pattern_id, start_pos);
+  }
 };
 
 struct MatchingOutputType {
   PatternIndexType pattern_index;
+  u32 literal_len;     // Aux info for matching phase, no need for unique ID
   u64 text_start_pos;  // The start offset within text that this token matches
 
-  MatchingOutputType(PatternIndexType &pattern_index, u64 offset_text)
-      : pattern_index(pattern_index), text_start_pos(offset_text) {}
+  MatchingOutputType(PatternIndexType &pattern_index, u32 literal_len, u64 offset_text)
+      : pattern_index(pattern_index), literal_len(literal_len), text_start_pos(offset_text) {}
 
   // These three properties are (and must be) unique
   bool operator==(const MatchingOutputType &other) const {
@@ -59,13 +68,15 @@ struct MatchingOutputType {
   };
 };
 
-static_assert(sizeof(PatternIndexType) == 24);
-static_assert(sizeof(MatchingOutputType) == 32);
+static_assert(sizeof(PatternIndexType) == 8);
+static_assert(sizeof(MatchingOutputType) == 24);
 
 using OutputEmitType = std::unordered_set<MatchingOutputType, MatchingOutputType::Hasher>;
 
 class AhoCorasick {
  public:
+  static std::atomic<u64> NUMBER_OF_UNIQUE_LITERALS;
+
   AhoCorasick();
   ~AhoCorasick() = default;
 
@@ -89,10 +100,10 @@ class AhoCorasick {
  private:
   FRIEND_TEST(TestAhoCorasick, SuffixLink);
   auto GetRoot() -> ART::N *;
+  void AppendResult(const IterativeParseText &ite, ART::N *leaf, OutputEmitType &out_result);
 
   std::unique_ptr<ART::Tree> trie_;
-  // A pair of keyword (in std::string format) and vector of its indexing info (referring back to the relation Pattern)
-  tbb::concurrent_vector<std::vector<PatternIndexType>> pattern_;
+  tbb::concurrent_unordered_map<TupleID, roaring::Roaring64Map> literal_map_;
 };
 
 }  // namespace aho_corasick

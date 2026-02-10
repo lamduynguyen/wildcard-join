@@ -102,13 +102,101 @@ void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersi
   }
 }
 
-void N::setSuffixLink(N *n) { suffixLink = n; }
+void N::setSuffixLink(N *link, N *node) {
+  assert(node->isCodePointEnd);
+  switch (node->getType()) {
+    case NTypes::N4: {
+      auto n = static_cast<N4 *>(node);
+      return n->setSuffixLink(link);
+    }
+    case NTypes::N16: {
+      auto n = static_cast<N16 *>(node);
+      return n->setSuffixLink(link);
+    }
+    case NTypes::N48: {
+      auto n = static_cast<N48 *>(node);
+      return n->setSuffixLink(link);
+    }
+    case NTypes::N256: {
+      auto n = static_cast<N256 *>(node);
+      return n->setSuffixLink(link);
+    }
+  }
+  assert(false);
+  __builtin_unreachable();
+}
 
-auto N::getSuffixLink() -> N * { return suffixLink; }
+auto N::getSuffixLink(const N *node) -> N * {
+  assert(node->isCodePointEnd);
+  switch (node->getType()) {
+    case NTypes::N4: {
+      auto n = static_cast<const N4 *>(node);
+      return n->getSuffixLink();
+    }
+    case NTypes::N16: {
+      auto n = static_cast<const N16 *>(node);
+      return n->getSuffixLink();
+    }
+    case NTypes::N48: {
+      auto n = static_cast<const N48 *>(node);
+      return n->getSuffixLink();
+    }
+    case NTypes::N256: {
+      auto n = static_cast<const N256 *>(node);
+      return n->getSuffixLink();
+    }
+  }
+  assert(false);
+  __builtin_unreachable();
+}
 
-void N::setOutputLink(N *n) { outputLink = n; }
+void N::setOutputLink(N *link, N *node) {
+  assert(node->isCodePointEnd);
+  switch (node->getType()) {
+    case NTypes::N4: {
+      auto n = static_cast<N4 *>(node);
+      return n->setOutputLink(link);
+    }
+    case NTypes::N16: {
+      auto n = static_cast<N16 *>(node);
+      return n->setOutputLink(link);
+    }
+    case NTypes::N48: {
+      auto n = static_cast<N48 *>(node);
+      return n->setOutputLink(link);
+    }
+    case NTypes::N256: {
+      auto n = static_cast<N256 *>(node);
+      return n->setOutputLink(link);
+    }
+  }
+  assert(false);
+  __builtin_unreachable();
+}
 
-auto N::getOutputLink() -> N * { return outputLink; }
+auto N::getOutputLink(const N *node) -> N * {
+  assert(node->isCodePointEnd);
+  switch (node->getType()) {
+    case NTypes::N4: {
+      auto n = static_cast<const N4 *>(node);
+      return n->getOutputLink();
+    }
+    case NTypes::N16: {
+      auto n = static_cast<const N16 *>(node);
+      return n->getOutputLink();
+    }
+    case NTypes::N48: {
+      auto n = static_cast<const N48 *>(node);
+      return n->getOutputLink();
+    }
+    case NTypes::N256: {
+      auto n = static_cast<const N256 *>(node);
+      return n->getOutputLink();
+    }
+  }
+  assert(false);
+  __builtin_unreachable();
+}
 
 // A node is a terminal node only if it has a leaf child
 auto N::isTerminalNode() -> bool { return getChild(NULL_TERMINATOR, this) != nullptr; }
@@ -195,14 +283,8 @@ bool N::isLocked(uint64_t version) const { return ((version & 0b10) == 0b10); }
 uint64_t N::readLockOrRestart(bool &needRestart) const {
   uint64_t version;
   version = typeVersionLockObsolete.load();
-  /*        do {
-              version = typeVersionLockObsolete.load();
-          } while (isLocked(version));*/
   if (isLocked(version) || isObsolete(version)) { needRestart = true; }
   return version;
-  // uint64_t version;
-  // while (isLocked(version)) _mm_pause();
-  // return version;
 }
 
 bool N::isObsolete(uint64_t version) { return (version & 1) == 1; }
@@ -243,26 +325,26 @@ void N::deleteNode(N *node) {
   switch (node->getType()) {
     case NTypes::N4: {
       auto n = static_cast<N4 *>(node);
-      delete n;
+      operator delete(n);
       return;
     }
     case NTypes::N16: {
       auto n = static_cast<N16 *>(node);
-      delete n;
+      operator delete(n);
       return;
     }
     case NTypes::N48: {
       auto n = static_cast<N48 *>(node);
-      delete n;
+      operator delete(n);
       return;
     }
     case NTypes::N256: {
       auto n = static_cast<N256 *>(node);
-      delete n;
+      operator delete(n);
       return;
     }
   }
-  delete node;
+  __builtin_unreachable();
 }
 
 uint64_t N::getChildren(const N *node, uint8_t start, uint8_t end, std::tuple<uint8_t, N *> children[],

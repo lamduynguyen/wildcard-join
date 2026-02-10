@@ -8,16 +8,24 @@
 // #define ART_NOREADLOCK
 // #define ART_NOWRITELOCK
 
+#include <malloc.h>
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <utility>
 
 #include "art/epoche.h"
-#include "art/key.h"
 
-using TupleID = uint64_t;
+using TupleID                            = uint64_t;
+static constexpr uint8_t NULL_TERMINATOR = '\0';
+
+#define DEFINE_NODE_LINK_FUNCTIONS(CLASS)       \
+  void setSuffixLink(N *n) { links[0] = n; }    \
+  N *getSuffixLink() const { return links[0]; } \
+  void setOutputLink(N *n) { links[1] = n; }    \
+  N *getOutputLink() const { return links[1]; }
 
 namespace ART {
 
@@ -31,7 +39,7 @@ class N {
  protected:
   friend class Tree;
 
-  N(NTypes type) { setType(type); }
+  N(NTypes type, bool isCodePointEnd) : isCodePointEnd(isCodePointEnd) { setType(type); }
 
   N(const N &) = delete;
 
@@ -41,8 +49,8 @@ class N {
   std::atomic<uint64_t> typeVersionLockObsolete{0b100};
   // version 1, unlocked, not obsolete
   uint8_t count = 0;
-  N *suffixLink = nullptr;
-  N *outputLink = nullptr;
+  // whether this node is the end of an unicode code point
+  bool isCodePointEnd = false;
 
   void setType(NTypes type);
 
@@ -79,10 +87,10 @@ class N {
   /**
    * Aho-corasick core: Suffix and output link management
    */
-  void setSuffixLink(N *n);
-  auto getSuffixLink() -> N *;
-  void setOutputLink(N *n);
-  auto getOutputLink() -> N *;
+  static void setSuffixLink(N *link, N *n);
+  static auto getSuffixLink(const N *n) -> N *;
+  static void setOutputLink(N *link, N *n);
+  static auto getOutputLink(const N *n) -> N *;
   auto isTerminalNode() -> bool;
 
   // Leaf operators
@@ -132,7 +140,7 @@ class N {
       return;
     }
 
-    auto nBig = new biggerN();
+    auto nBig = biggerN::makeNode(n->isCodePointEnd);
     n->copyTo(nBig);
     nBig->insert(key, generateVal());
 
@@ -167,8 +175,7 @@ class N {
       return;
     }
 
-    auto nSmall = new smallerN();
-
+    auto nSmall = smallerN::makeNode(n->isCodePointEnd);
     n->copyTo(nSmall);
     nSmall->remove(key);
     N::change(parentNode, keyParent, nSmall);
@@ -183,28 +190,38 @@ class N {
 };
 
 struct Leaf {
-  uint64_t aux_index;
-  uint32_t key_len;
+  uint64_t auxIndex;
+  uint32_t keyLen;
   uint8_t key[];
 
-  static auto MakeLeaf(const uint8_t *original_key, uint32_t key_len, uint64_t aux_index) {
-    void *mem = operator new(sizeof(Leaf) + key_len);
-    return new (mem) Leaf(original_key, key_len, aux_index);
+  static auto MakeLeaf(const uint8_t *originalKey, uint32_t keyLen, bool mustAppendNull, uint64_t auxIndex) {
+    void *mem = operator new(sizeof(Leaf) + keyLen + mustAppendNull);
+    auto leaf = new (mem) Leaf(originalKey, keyLen, auxIndex);
+    if (mustAppendNull) {
+      leaf->key[keyLen] = NULL_TERMINATOR;
+      leaf->keyLen++;
+    }
+    return leaf;
   }
 
+  // key stored in Leaf always contain '\0'
+  inline auto keyLenWithoutNullTerminator() { return keyLen - 1; }
+
   inline const uint8_t &operator[](std::size_t i) const {
-    assert(i < key_len);
+    assert(i < keyLen);
     return key[i];
   }
 
-  inline bool operator==(const Key &k) const {
-    if (k.getKeyLen() != key_len) { return false; }
-    return std::memcmp(&k[0], key, key_len) == 0;
+  template <typename byte_t>
+  inline bool equal(const byte_t *keyword, uint32_t keywordSize, bool requiresNullTerminated) const {
+    assert(keyLen > 0 && key[keyLen - 1] == NULL_TERMINATOR);
+    if (keywordSize + requiresNullTerminated != keyLen) { return false; }
+    return std::memcmp(keyword, key, keyLen - requiresNullTerminated) == 0;
   }
 
  private:
-  Leaf(const uint8_t *original_key, uint32_t key_len, uint64_t aux_index) : aux_index(aux_index), key_len(key_len) {
-    memcpy(this->key, original_key, key_len);
+  Leaf(const uint8_t *originalKey, uint32_t keyLen, uint64_t auxIndex) : auxIndex(auxIndex), keyLen(keyLen) {
+    memcpy(this->key, originalKey, keyLen);
   }
 };
 
@@ -212,9 +229,20 @@ class N4 : public N {
  public:
   uint8_t keys[4];
   N *children[4] = {nullptr, nullptr, nullptr, nullptr};
+  N *links[];
+
+  N4(bool isCodePointEnd) : N(NTypes::N4, isCodePointEnd) {
+    if (isCodePointEnd) { links[0] = links[1] = nullptr; }
+  }
 
  public:
-  N4() : N(NTypes::N4) {}
+  DEFINE_NODE_LINK_FUNCTIONS(N4);
+
+  static auto makeNode(bool isCodePointEnd) -> N4 * {
+    auto size   = (isCodePointEnd) ? (sizeof(N4) + sizeof(N *) * 2) : sizeof(N4);
+    auto buffer = operator new(size);
+    return new (operator new(size)) N4(isCodePointEnd);
+  }
 
   void insert(uint8_t key, N *n);
 
@@ -246,6 +274,7 @@ class N16 : public N {
  public:
   uint8_t keys[16];
   N *children[16];
+  N *links[];
 
   static uint8_t flipSign(uint8_t keyByte) {
     // Flip the sign bit, enables signed SSE comparison of unsigned values, used by Node16
@@ -277,10 +306,18 @@ class N16 : public N {
 
   N *const *getChildPos(const uint8_t k) const;
 
- public:
-  N16() : N(NTypes::N16) {
+  N16(bool isCodePointEnd) : N(NTypes::N16, isCodePointEnd) {
     memset(keys, 0, sizeof(keys));
     memset(children, 0, sizeof(children));
+    if (isCodePointEnd) { links[0] = links[1] = nullptr; }
+  }
+
+ public:
+  DEFINE_NODE_LINK_FUNCTIONS(N16);
+
+  static auto makeNode(bool isCodePointEnd) -> N16 * {
+    auto size = (isCodePointEnd) ? (sizeof(N16) + sizeof(N *) * 2) : sizeof(N16);
+    return new (operator new(size)) N16(isCodePointEnd);
   }
 
   void insert(uint8_t key, N *n);
@@ -310,13 +347,22 @@ class N16 : public N {
 class N48 : public N {
   uint8_t childIndex[256];
   N *children[48];
+  N *links[];
+
+  N48(bool isCodePointEnd) : N(NTypes::N48, isCodePointEnd) {
+    memset(childIndex, emptyMarker, sizeof(childIndex));
+    memset(children, 0, sizeof(children));
+    if (isCodePointEnd) { links[0] = links[1] = nullptr; }
+  }
 
  public:
   static const uint8_t emptyMarker = 48;
 
-  N48() : N(NTypes::N48) {
-    memset(childIndex, emptyMarker, sizeof(childIndex));
-    memset(children, 0, sizeof(children));
+  DEFINE_NODE_LINK_FUNCTIONS(N48);
+
+  static auto makeNode(bool isCodePointEnd) -> N48 * {
+    auto size = (isCodePointEnd) ? (sizeof(N48) + sizeof(N *) * 2) : sizeof(N48);
+    return new (operator new(size)) N48(isCodePointEnd);
   }
 
   void insert(uint8_t key, N *n);
@@ -347,9 +393,20 @@ class N48 : public N {
 
 class N256 : public N {
   N *children[256];
+  N *links[];
+
+  N256(bool isCodePointEnd) : N(NTypes::N256, isCodePointEnd) {
+    memset(children, NULL_TERMINATOR, sizeof(children));
+    if (isCodePointEnd) { links[0] = links[1] = nullptr; }
+  }
 
  public:
-  N256() : N(NTypes::N256) { memset(children, NULL_TERMINATOR, sizeof(children)); }
+  DEFINE_NODE_LINK_FUNCTIONS(N256);
+
+  static auto makeNode(bool isCodePointEnd) -> N256 * {
+    auto size = (isCodePointEnd) ? (sizeof(N256) + sizeof(N *) * 2) : sizeof(N256);
+    return new (operator new(size)) N256(isCodePointEnd);
+  }
 
   void insert(uint8_t key, N *val);
 

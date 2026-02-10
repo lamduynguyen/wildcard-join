@@ -37,21 +37,21 @@ auto Skeleton::Segment::GetNextLiteralOffset(pat_off_t start_pos) -> pat_off_t {
 
 // --------------------------------------------------------------------------------------------
 Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) : only_wildcard_(true) {
-  size_t last_end_pos = 0;
+  auto last_end_pos = 0U;
   while (true) {
     auto match = Segment();
 
     // Extract tokens by PERCENTAGE only
     auto prev_pos = last_end_pos;
     auto tok      = Token::NextSegment(p, plen, last_end_pos);
-    if (tok.start == std::string::npos) { break; }
+    if (tok.start == Token::WRONG_OFFSET) { break; }
     if (prev_pos < tok.start) { match.has_prefix_percent = true; };
 
     // Build between-PERCENTAGE skeleton based on the extracted token -- p[tok.start : last_end_pos]
     auto pos = tok.start;
     for (auto pos = tok.start; pos < last_end_pos;) {
       auto literal = Token::NextToken(p, plen, pos, match.max_underscore_cnt);
-      if (literal.start == std::string::npos) {
+      if (literal.start == Token::WRONG_OFFSET) {
         // this means we have a suffix _ scenario
         match.suffix_underscore_cnt = last_end_pos - pos;
         break;
@@ -138,10 +138,9 @@ auto Skeleton::TryMatching(const MatchingOutputType &ac_match, Matcher &matcher)
 auto Skeleton::SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool {
   const auto &segment  = seg_[matcher.segment_idx_];
   auto next_sket_index = matcher.segment_idx_ + 1;
-  return (
-    (next_sket_index < seg_.size()) || (next_sket_index >= seg_.size() && seg_.back().has_suffix_percent) ||
-    (next_sket_index >= seg_.size() && !seg_.back().has_suffix_percent &&
-     ac_match.text_start_pos + ac_match.pattern_index.keyword_len + segment.suffix_underscore_cnt == text_length));
+  return ((next_sket_index < seg_.size()) || (next_sket_index >= seg_.size() && seg_.back().has_suffix_percent) ||
+          (next_sket_index >= seg_.size() && !seg_.back().has_suffix_percent &&
+           ac_match.text_start_pos + ac_match.literal_len + segment.suffix_underscore_cnt == text_length));
 }
 
 auto Skeleton::InitializeMatcher() -> Matcher {
@@ -161,29 +160,29 @@ auto Skeleton::AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher)
 }
 
 // --------------------------------------------------------------------------------------------
-auto Token::NextToken(const char *s, size_t slen, std::size_t &pos, std::size_t &max_underscore_cnt) -> Token {
+auto Token::NextToken(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> Token {
   auto prev_pos = pos;
   while (pos < slen && IsDelim(s[pos])) { pos++; }
   max_underscore_cnt = std::max(max_underscore_cnt, pos - prev_pos);
   if (pos >= slen) {
     // no more tokens; resetting pos back to suffix processing
     pos = prev_pos;
-    return {std::string_view::npos, 0};
+    return {WRONG_OFFSET, 0};
   }
-  std::size_t start = pos;
+  auto start = pos;
   while (pos < slen && !IsDelim(s[pos])) { pos++; }
   return {start, pos - start};
 };
 
-auto Token::NextSegment(const char *s, size_t slen, std::size_t &pos) -> Token {
+auto Token::NextSegment(const char *s, size_t slen, u32 &pos) -> Token {
   auto prev_pos = pos;
   while (pos < slen && s[pos] == PERCENTAGE) { pos++; }
   if (pos >= slen) {
     // no more tokens; resetting pos back to suffix processing
     pos = prev_pos;
-    return {std::string_view::npos, 0};
+    return {WRONG_OFFSET, 0};
   }
-  std::size_t start = pos;
+  auto start = pos;
   while (pos < slen && s[pos] != PERCENTAGE) { pos++; }
   return {start, pos - start};
 };

@@ -6,22 +6,30 @@
 
 namespace aho_corasick {
 
+std::atomic<u64> AhoCorasick::NUMBER_OF_UNIQUE_LITERALS = 0;
+
 AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART::Tree>()) {}
 
 auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
 auto AhoCorasick::GetRoot() -> ART::N * { return trie_->root; }
 
-void AhoCorasick::Insert(const char *keyword, uint64_t keyword_size, const PatternIndexType &keyword_aux_index,
+void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_auxIndex,
                          ART::ThreadInfo &t) {
-  Key key;
-  key.set(keyword, keyword_size);
-  auto new_tid = [&]() {
-    auto it = pattern_.emplace_back(std::vector<PatternIndexType>{keyword_aux_index});
-    return it - pattern_.begin();
+  assert(keyword_len > 0);
+  bool must_append_null = (keyword[keyword_len - 1] != NULL_TERMINATOR);
+  auto new_tid          = [&]() {
+    auto new_tid    = NUMBER_OF_UNIQUE_LITERALS.fetch_add(1, std::memory_order_relaxed);
+    auto new_bitmap = roaring::Roaring64Map();
+    new_bitmap.add(keyword_auxIndex.ToUint());
+    literal_map_.emplace(new_tid, new_bitmap);
+    return new_tid;
   };
-  auto upsert = [this, keyword_aux_index](TupleID tid) { pattern_[tid].emplace_back(keyword_aux_index); };
-  trie_->insert(key, new_tid, upsert, t);
+  auto upsert = [this, keyword_auxIndex](TupleID tid) {
+    assert(literal_map_.contains(tid));
+    literal_map_[tid].add(keyword_auxIndex.ToUint());
+  };
+  trie_->insert(keyword, keyword_len, must_append_null, new_tid, upsert, t);
 }
 
 void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
@@ -44,7 +52,7 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
         const auto key = std::get<0>(children[i]);
         const auto n   = std::get<1>(children[i]);
         if (!ART::N::isLeaf(n)) {
-          n->setSuffixLink(node);
+          ART::N::setSuffixLink(node, n);
           bfs_stack.emplace(n, node_level + 1);
         }
       }
@@ -57,19 +65,19 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
       const auto n   = std::get<1>(children[i]);
 
       if (key != NULL_TERMINATOR) {
-        auto suffix_node = node->getSuffixLink();
+        auto suffix_node = ART::N::getSuffixLink(node);
         do {
           auto possible_suffix = ART::N::getChild(key, suffix_node);
           if (possible_suffix != nullptr) {
             suffix_node = possible_suffix;
             break;
           }
-          suffix_node = suffix_node->getSuffixLink();
+          suffix_node = ART::N::getSuffixLink(suffix_node);
         } while (suffix_node);
         if (!suffix_node) { suffix_node = trie_->root; }
-        n->setSuffixLink(suffix_node);
-        n->setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : suffix_node->getOutputLink());
-        assert((n->getOutputLink() == nullptr) || (n->getOutputLink()->isTerminalNode()));
+        ART::N::setSuffixLink(suffix_node, n);
+        ART::N::setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : ART::N::getOutputLink(suffix_node), n);
+        assert((ART::N::getOutputLink(n) == nullptr) || (ART::N::getOutputLink(n)->isTerminalNode()));
         bfs_stack.emplace(n, node_level + 1);
       }
     }
@@ -113,7 +121,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
   //      we go back to root and output that pattern
   //  3. Otherwise, move forward to that state
   while (ite.ptr != trie_->root && possible_next == nullptr) {
-    ite.ptr       = ite.ptr->getSuffixLink();
+    ite.ptr       = ART::N::getSuffixLink(ite.ptr);
     possible_next = ART::N::getChild(c, ite.ptr);
   }
   assert((possible_next != nullptr) || (ite.ptr == trie_->root));  // assertion for case #1
@@ -123,30 +131,34 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
     if (ite.ptr->isTerminalNode()) {
       // case #2: matching for 2nd case
       auto leaf = ART::N::getChild(NULL_TERMINATOR, possible_next);
-      assert(ART::N::isLeaf(leaf));
-      auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
-      for (auto &pattern_idx : pattern_[keyword_id]) {
-        result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
-      }
+      AppendResult(ite, leaf, result);
     }
   }
   // Evaluate output links
-  auto output_link = ite.ptr->getOutputLink();
+  auto output_link = ART::N::getOutputLink(ite.ptr);
   while (output_link != nullptr) {
     if (output_link->isTerminalNode()) {
       auto leaf = ART::N::getChild(NULL_TERMINATOR, output_link);
-      assert(ART::N::isLeaf(leaf));
-      auto keyword_id = ART::N::getLeaf(leaf)->aux_index;
-      for (auto &pattern_idx : pattern_[keyword_id]) {
-        result.emplace(pattern_idx, ite.next_offset - pattern_idx.keyword_len + 1);
-      }
+      AppendResult(ite, leaf, result);
     }
-    output_link = output_link->getSuffixLink();  // follow the suffix-link chain
+    output_link = ART::N::getOutputLink(output_link);  // follow the suffix-link chain
   }
 
   // Advance next offset in the text for next processing
   ite.next_offset++;
   return result;
+}
+
+void AhoCorasick::AppendResult(const IterativeParseText &ite, ART::N *leaf, OutputEmitType &out_result) {
+  assert(ART::N::isLeaf(leaf));
+  auto keyword_id  = ART::N::getLeaf(leaf)->auxIndex;
+  auto literal_len = ART::N::getLeaf(leaf)->keyLenWithoutNullTerminator();
+  auto match_pos   = ite.next_offset - literal_len + 1;
+  auto &bitmap     = literal_map_[keyword_id];
+  for (auto value : bitmap) {
+    auto pattern_idx = PatternIndexType::FromUint(value);
+    out_result.emplace(pattern_idx, literal_len, match_pos);
+  }
 }
 
 }  // namespace aho_corasick

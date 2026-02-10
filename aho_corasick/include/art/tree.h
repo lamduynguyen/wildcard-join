@@ -25,7 +25,16 @@ class Tree {
   N *const root;
   Epoche epoche{256};
 
-  void yield(int count) const;
+  inline void yield(int count) const {
+    if (count > 3)
+      sched_yield();
+    else
+      _mm_pause();
+  }
+
+  inline auto getNextChar(const char *keyword, uint64_t keywordLen, bool mustAppendNull, uint64_t index) {
+    return (index >= keywordLen) ? (assert(mustAppendNull), NULL_TERMINATOR) : keyword[index];
+  }
 
  public:
   Tree();
@@ -38,10 +47,12 @@ class Tree {
 
   ThreadInfo getThreadInfo();
 
-  Leaf *lookup(const Key &k, ThreadInfo &threadEpocheInfo) const;
+  Leaf *lookup(const char *keyword, uint64_t keywordLen, bool requiresNullTerminated, ThreadInfo &threadEpocheInfo);
 
   template <typename NewKeyFn, typename UpsertFn>
-  void insert(const Key &k, NewKeyFn &&insert_fn, UpsertFn &&upsert_fn, ThreadInfo &epocheInfo) {
+  void insert(const char *keyword, uint64_t keywordLen, bool mustAppendNull, NewKeyFn &&insert_fn, UpsertFn &&upsert_fn,
+              ThreadInfo &epocheInfo) {
+    assert(keywordLen > 0 && ((keyword[keywordLen - 1] == NULL_TERMINATOR) == !mustAppendNull));
     EpocheGuard epocheGuard(epocheInfo);
     int restartCount = 0;
   restart:
@@ -62,19 +73,20 @@ class Tree {
       auto v     = node->readLockOrRestart(needRestart);
       if (needRestart) goto restart;
 
-      nodeKey  = k[level];
+      nodeKey  = getNextChar(keyword, keywordLen, mustAppendNull, level);
       nextNode = N::getChild(nodeKey, node);
       node->checkOrRestart(v, needRestart);
       if (needRestart) goto restart;
 
       if (nextNode == nullptr) {
         auto generateVal = [&]() {
-          auto lastNode = N::setLeaf(Leaf::MakeLeaf(k.data, k.getKeyLen(), insert_fn()));
-          if (level < k.getKeyLen() - 1) {
-            auto range = std::views::iota(level + 1, k.getKeyLen()) | std::views::reverse;
+          auto lastNode = N::setLeaf(
+            Leaf::MakeLeaf(reinterpret_cast<const uint8_t *>(keyword), keywordLen, mustAppendNull, insert_fn()));
+          if (level < keywordLen - 1 + mustAppendNull) {
+            auto range = std::views::iota(level + 1, keywordLen + mustAppendNull) | std::views::reverse;
             for (auto idx : range) {
-              auto aboveKey = k[idx];
-              auto n4       = new N4();
+              auto aboveKey = getNextChar(keyword, keywordLen, mustAppendNull, idx);
+              auto n4       = N4::makeNode(true);
               n4->insert(aboveKey, lastNode);
               lastNode = n4;
             }
@@ -98,31 +110,33 @@ class Tree {
 
         // Matching key, call upsert() -- Only works with trie. With prefix tree/radix tree/variants, this is wrong
         auto leaf = reinterpret_cast<Leaf *>(N::getLeaf(nextNode));
-        if (*leaf == k) {
+        if (leaf->equal(keyword, keywordLen, mustAppendNull)) {
           // upsert
-          auto tid = N::getLeaf(nextNode)->aux_index;
+          auto tid = N::getLeaf(nextNode)->auxIndex;
           upsert_fn(tid);
           node->writeUnlock();
           return;
         }
 
         // Create new inner node to replace the leaf
-        auto iterNode = new N4();
+        auto iterNode = N4::makeNode(true);
         N::change(node, nodeKey, iterNode);
         level++;
-        assert(level < leaf->key_len);  // prevent inserting when prefix of key exists already
+        assert(level < leaf->keyLen);  // prevent inserting when prefix of key exists already
         // Start inserting new intermediate nodes to represent shared prefix
         uint32_t prefixLength = 0;
-        for (; (*leaf)[level + prefixLength] == k[level + prefixLength]; prefixLength++) {
-          auto nodeKey = k[level + prefixLength];
-          auto n4      = new N4();
-          iterNode->insert(nodeKey, n4);
+        for (; (*leaf)[level + prefixLength] == getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength);
+             ++prefixLength) {
+          auto n4 = N4::makeNode(true);
+          iterNode->insert(getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength), n4);
           iterNode = n4;
         }
-        assert(iterNode->getType() == NTypes::N4);                         // Guarantee to be N4 here
-        assert(k[level + prefixLength] != (*leaf)[level + prefixLength]);  // should be different key here
-        reinterpret_cast<N4 *>(iterNode)->insert(k[level + prefixLength],
-                                                 N::setLeaf(Leaf::MakeLeaf(k.data, k.getKeyLen(), insert_fn())));
+        auto newNodeKey = getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength);
+        assert(iterNode->getType() == NTypes::N4);            // Guarantee to be N4 here
+        assert(newNodeKey != (*leaf)[level + prefixLength]);  // should be different key here
+        reinterpret_cast<N4 *>(iterNode)->insert(keyword[level + prefixLength],
+                                                 N::setLeaf(Leaf::MakeLeaf(reinterpret_cast<const uint8_t *>(keyword),
+                                                                           keywordLen, mustAppendNull, insert_fn())));
         reinterpret_cast<N4 *>(iterNode)->insert((*leaf)[level + prefixLength], nextNode);
         node->writeUnlock();
         return;

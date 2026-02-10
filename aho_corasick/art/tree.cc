@@ -3,13 +3,13 @@
 #include <ranges>
 
 #include "art/epoche.h"
-#include "art/key.h"
 #include "art/node.h"
 #include "art/tree.h"
 
 namespace ART {
 
-Tree::Tree() : root(new N256()) {}
+// TODO: Should we consider null to be a codepoint end?
+Tree::Tree() : root(N256::makeNode(true)) {}
 
 Tree::~Tree() {
   N::deleteChildren(root);
@@ -18,14 +18,8 @@ Tree::~Tree() {
 
 ThreadInfo Tree::getThreadInfo() { return ThreadInfo(this->epoche); }
 
-void Tree::yield(int count) const {
-  if (count > 3)
-    sched_yield();
-  else
-    _mm_pause();
-}
-
-Leaf *Tree::lookup(const Key &k, ThreadInfo &threadEpocheInfo) const {
+Leaf *Tree::lookup(const char *keyword, uint64_t keywordLen, bool requiresNullTerminated,
+                   ThreadInfo &threadEpocheInfo) {
   EpocheGuardReadonly epocheGuard(threadEpocheInfo);
   int restartCount = 0;
 restart:
@@ -41,9 +35,9 @@ restart:
   v    = node->readLockOrRestart(needRestart);
   if (needRestart) goto restart;
   while (true) {
-    if (k.getKeyLen() <= level) { return nullptr; }
+    if (keywordLen + requiresNullTerminated <= level) { return nullptr; }
     parentNode = node;
-    node       = N::getChild(k[level], parentNode);
+    node       = N::getChild(getNextChar(keyword, keywordLen, requiresNullTerminated, level), parentNode);
     parentNode->checkOrRestart(v, needRestart);
     if (needRestart) goto restart;
 
@@ -53,7 +47,8 @@ restart:
       if (needRestart) goto restart;
 
       auto leaf = N::getLeaf(node);
-      return ((*leaf) == k) ? leaf : nullptr;
+      auto ret  = leaf->equal(reinterpret_cast<const uint8_t *>(keyword), keywordLen, requiresNullTerminated);
+      return (ret) ? leaf : nullptr;
     }
     level++;
 

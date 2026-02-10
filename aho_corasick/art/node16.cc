@@ -16,7 +16,7 @@ void N16::insert(uint8_t key, N *n) {
   uint16_t bitfield = _mm_movemask_epi8(cmp) & (0xFFFF >> (16 - count));
   unsigned pos      = bitfield ? ctz(bitfield) : count;
   memmove(keys + pos + 1, keys + pos, count - pos);
-  memmove(children + pos + 1, children + pos, (count - pos) * sizeof(uintptr_t));
+  memmove(children + pos + 1, children + pos, (count - pos) * sizeof(N *));
   keys[pos]     = keyByteFlipped;
   children[pos] = n;
   count++;

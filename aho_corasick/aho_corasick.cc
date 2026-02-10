@@ -1,5 +1,7 @@
 #include "aho_corasick/aho_corasick.h"
 
+#include "fmt/format.h"
+
 #include <cassert>
 #include <cstring>
 #include <queue>
@@ -34,26 +36,33 @@ void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const Patter
 
 void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
   // Single-threaded for now. TODO: Do we need multi-threaded version?
-  auto bfs_stack = std::queue<std::pair<ART::N *, uint32_t>>();
-  bfs_stack.emplace(trie_->root, 0);
+  auto bfs_stack = std::queue<SuffixLinkQueueItem>();
+  bfs_stack.emplace(trie_->root, nullptr, 0, "");
 
   while (!bfs_stack.empty()) {
-    auto [node, node_level] = bfs_stack.front();
+    auto item = bfs_stack.front();
     bfs_stack.pop();
 
     // get current node's children
     std::tuple<uint8_t, ART::N *> children[256];
     uint32_t children_cnt = 0;
-    ART::N::getChildren(node, 0u, 255u, children, children_cnt);
+    ART::N::getChildren(item.cur, 0u, 255u, children, children_cnt);
 
     // children of the root node all point suffix link to the root
-    if (node == trie_->root) {
+    if (item.cur == trie_->root) {
+      assert(item.cur->isLastByteOfCodePoint());  // Root should always be valid last byte of code point
       for (auto i = 0; i < children_cnt; ++i) {
         const auto key = std::get<0>(children[i]);
         const auto n   = std::get<1>(children[i]);
         if (!ART::N::isLeaf(n)) {
-          ART::N::setSuffixLink(node, n);
-          bfs_stack.emplace(n, node_level + 1);
+          if (n->isLastByteOfCodePoint()) {
+            ART::N::setSuffixLink(item.cur, n);
+            fmt::println("1. Emplace {:p}", fmt::ptr(n));
+            bfs_stack.emplace(n, n, item.level + 1, "");
+          } else {
+            fmt::println("2. Emplace {:p}", fmt::ptr(n));
+            bfs_stack.emplace(n, item.cur, item.level + 1, std::string(1, key));
+          }
         }
       }
       continue;
@@ -64,21 +73,45 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
       const auto key = std::get<0>(children[i]);
       const auto n   = std::get<1>(children[i]);
 
-      if (key != NULL_TERMINATOR) {
-        auto suffix_node = ART::N::getSuffixLink(node);
-        do {
-          auto possible_suffix = ART::N::getChild(key, suffix_node);
-          if (possible_suffix != nullptr) {
-            suffix_node = possible_suffix;
-            break;
+      if (key == NULL_TERMINATOR) {
+        assert(ART::N::isLeaf(n));
+        continue;
+      }
+
+      if (n->isLastByteOfCodePoint()) {
+        auto suffix_node = ART::N::getSuffixLink(item.last_valid_parent);
+        while (suffix_node) {
+          auto possible_suffix = suffix_node;
+          assert(possible_suffix->isLastByteOfCodePoint());
+          bool found           = true;
+          for (char &c : item.current_intermediate_str) {
+            auto next = ART::N::getChild(static_cast<uint8_t>(c), possible_suffix);
+            if (!next) {
+              found = false;
+              break;
+            }
+            possible_suffix = next;
+          }
+          if (found) {
+            auto next = ART::N::getChild(key, possible_suffix);
+            if (next) {
+              suffix_node = next;
+              break;
+            }
           }
           suffix_node = ART::N::getSuffixLink(suffix_node);
-        } while (suffix_node);
+        }
         if (!suffix_node) { suffix_node = trie_->root; }
+        assert(suffix_node->isLastByteOfCodePoint());
         ART::N::setSuffixLink(suffix_node, n);
         ART::N::setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : ART::N::getOutputLink(suffix_node), n);
         assert((ART::N::getOutputLink(n) == nullptr) || (ART::N::getOutputLink(n)->isTerminalNode()));
-        bfs_stack.emplace(n, node_level + 1);
+        fmt::println("3. Emplace {:p}", fmt::ptr(n));
+        bfs_stack.emplace(n, n, item.level + 1, "");
+      } else {
+        fmt::println("4. Emplace {:p}", fmt::ptr(n));
+        bfs_stack.emplace(n, item.last_valid_parent, item.level + 1,
+                          item.current_intermediate_str + static_cast<char>(key));
       }
     }
   }

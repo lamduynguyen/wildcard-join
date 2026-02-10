@@ -11,6 +11,7 @@
 #include <ranges>
 
 #include "art/node.h"
+#include "common/utf8.h"
 
 namespace aho_corasick {
 class AhoCorasick;
@@ -53,6 +54,23 @@ class Tree {
   void insert(const char *keyword, uint64_t keywordLen, bool mustAppendNull, NewKeyFn &&insert_fn, UpsertFn &&upsert_fn,
               ThreadInfo &epocheInfo) {
     assert(keywordLen > 0 && ((keyword[keywordLen - 1] == NULL_TERMINATOR) == !mustAppendNull));
+
+    // -----------------------------
+    // Step 1: Build isEndCodePoint array
+    // -----------------------------
+    std::vector<bool> isEndCodePoint(keywordLen + mustAppendNull, true);
+    const char *end = keyword + keywordLen + mustAppendNull;
+    for (auto ptr = keyword; ptr < end;) {
+      auto result         = umbra::Utf8::readCodePoint(ptr, end);
+      const char *nextPtr = result.next;
+      // All bytes except the last are not end of code point
+      for (const char *b = ptr; b < nextPtr - 1; ++b) { isEndCodePoint[b - keyword] = false; }
+      ptr = nextPtr;
+    }
+
+    // -----------------------------
+    // Step 1: Normal trie insertion
+    // -----------------------------
     EpocheGuard epocheGuard(epocheInfo);
     int restartCount = 0;
   restart:
@@ -86,7 +104,7 @@ class Tree {
             auto range = std::views::iota(level + 1, keywordLen + mustAppendNull) | std::views::reverse;
             for (auto idx : range) {
               auto aboveKey = getNextChar(keyword, keywordLen, mustAppendNull, idx);
-              auto n4       = N4::makeNode(true);
+              auto n4       = N4::makeNode(isEndCodePoint[idx]);
               n4->insert(aboveKey, lastNode);
               lastNode = n4;
             }
@@ -119,7 +137,7 @@ class Tree {
         }
 
         // Create new inner node to replace the leaf
-        auto iterNode = N4::makeNode(true);
+        auto iterNode = N4::makeNode(isEndCodePoint[level]);
         N::change(node, nodeKey, iterNode);
         level++;
         assert(level < leaf->keyLen);  // prevent inserting when prefix of key exists already
@@ -127,7 +145,7 @@ class Tree {
         uint32_t prefixLength = 0;
         for (; (*leaf)[level + prefixLength] == getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength);
              ++prefixLength) {
-          auto n4 = N4::makeNode(true);
+          auto n4 = N4::makeNode(isEndCodePoint[level + prefixLength]);
           iterNode->insert(getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength), n4);
           iterNode = n4;
         }

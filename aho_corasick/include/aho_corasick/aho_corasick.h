@@ -98,7 +98,16 @@ class AhoCorasick {
   auto ContinueParseText(IterativeParseText &ite) -> OutputEmitType;
 
  private:
-  FRIEND_TEST(TestAhoCorasick, SuffixLink);
+  struct SuffixLinkQueueItem {
+    ART::N *cur;
+    ART::N *last_valid_parent;
+    uint32_t level;
+    std::string current_intermediate_str;
+  };
+
+  FRIEND_TEST(TestAhoCorasick, SingleByteUnicode);
+  FRIEND_TEST(TestAhoCorasick, MultiByteUnicode);
+
   auto GetRoot() -> ART::N *;
   void AppendResult(const IterativeParseText &ite, ART::N *leaf, OutputEmitType &out_result);
 

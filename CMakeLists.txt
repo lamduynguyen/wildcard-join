@@ -61,7 +61,7 @@ if(SANITIZER)
   target_link_libraries(prototype PUBLIC asan)
 endif()
 
-file(GLOB_RECURSE TEST_FILES test/**.cc test/**/**.h)
+file(GLOB_RECURSE TEST_FILES test/**.cc test/**.h)
 add_custom_target(
   format clang-format --verbose -style=file:${CMAKE_CURRENT_SOURCE_DIR}/.clang-format -i
          ${CMAKE_CURRENT_SOURCE_DIR}/main.cc

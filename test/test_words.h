@@ -1,12 +1,12 @@
 #pragma once
 
+#include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include <iostream>
 
 static std::vector<std::string> LoadTestWords() {
-    static const char *WORDS = R"WORDS(
+  static const char *WORDS = R"WORDS(
 A
 a
 aa

@@ -1,7 +1,5 @@
 #include "aho_corasick/aho_corasick.h"
 
-#include "fmt/format.h"
-
 #include <cassert>
 #include <cstring>
 #include <queue>
@@ -35,84 +33,103 @@ void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const Patter
 }
 
 void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
-  // Single-threaded for now. TODO: Do we need multi-threaded version?
-  auto bfs_stack = std::queue<SuffixLinkQueueItem>();
-  bfs_stack.emplace(trie_->root, nullptr, 0, "");
+  // Single-threaded BFS for constructing suffix and output links
+  std::queue<BFSNodeItem> bfs_queue;
+  bfs_queue.push(BFSNodeItem{trie_->root, trie_->root, {}, 0});
 
-  while (!bfs_stack.empty()) {
-    auto item = bfs_stack.front();
-    bfs_stack.pop();
+  while (!bfs_queue.empty()) {
+    BFSNodeItem item = bfs_queue.front();
+    bfs_queue.pop();
 
-    // get current node's children
+    // Get children of current node
     std::tuple<uint8_t, ART::N *> children[256];
     uint32_t children_cnt = 0;
-    ART::N::getChildren(item.cur, 0u, 255u, children, children_cnt);
+    ART::N::getChildren(item.node, 0u, 255u, children, children_cnt);
 
-    // children of the root node all point suffix link to the root
-    if (item.cur == trie_->root) {
-      assert(item.cur->isLastByteOfCodePoint());  // Root should always be valid last byte of code point
-      for (auto i = 0; i < children_cnt; ++i) {
-        const auto key = std::get<0>(children[i]);
-        const auto n   = std::get<1>(children[i]);
-        if (!ART::N::isLeaf(n)) {
-          if (n->isLastByteOfCodePoint()) {
-            ART::N::setSuffixLink(item.cur, n);
-            fmt::println("1. Emplace {:p}", fmt::ptr(n));
-            bfs_stack.emplace(n, n, item.level + 1, "");
-          } else {
-            fmt::println("2. Emplace {:p}", fmt::ptr(n));
-            bfs_stack.emplace(n, item.cur, item.level + 1, std::string(1, key));
-          }
+    // --- Handle root node ---
+    if (item.node == trie_->root) {
+      assert(item.node->isLastByteOfCodePoint());
+
+      for (uint32_t i = 0; i < children_cnt; ++i) {
+        const uint8_t byte = std::get<0>(children[i]);
+        ART::N *child_node = std::get<1>(children[i]);
+        if (ART::N::isLeaf(child_node)) { continue; }
+
+        if (child_node->isLastByteOfCodePoint()) {
+          // Child is end of code point => suffix link points to root
+          ART::N::setSuffixLink(trie_->root, child_node);
+          bfs_queue.push(BFSNodeItem{child_node, child_node, {}, 0});
+        } else {
+          // Child is intermediate byte => start new partial sequence
+          std::array<uint8_t, 6> partial_bytes{};
+          partial_bytes[0] = byte;
+          bfs_queue.push(BFSNodeItem{child_node, item.node, partial_bytes, 1});
         }
       }
       continue;
     }
 
-    // otherwise, start matching new suffix link
-    for (auto i = 0; i < children_cnt; ++i) {
-      const auto key = std::get<0>(children[i]);
-      const auto n   = std::get<1>(children[i]);
+    // --- Handle non-root node ---
+    for (uint32_t i = 0; i < children_cnt; ++i) {
+      const uint8_t byte = std::get<0>(children[i]);
+      ART::N *child_node = std::get<1>(children[i]);
 
-      if (key == NULL_TERMINATOR) {
-        assert(ART::N::isLeaf(n));
+      // #1. A leaf node that contain literal here, continue
+      if (byte == NULL_TERMINATOR) {
+        assert(ART::N::isLeaf(child_node));
         continue;
       }
 
-      if (n->isLastByteOfCodePoint()) {
-        auto suffix_node = ART::N::getSuffixLink(item.last_valid_parent);
-        while (suffix_node) {
-          auto possible_suffix = suffix_node;
-          assert(possible_suffix->isLastByteOfCodePoint());
-          bool found           = true;
-          for (char &c : item.current_intermediate_str) {
-            auto next = ART::N::getChild(static_cast<uint8_t>(c), possible_suffix);
-            if (!next) {
-              found = false;
-              break;
-            }
-            possible_suffix = next;
-          }
-          if (found) {
-            auto next = ART::N::getChild(key, possible_suffix);
-            if (next) {
-              suffix_node = next;
-              break;
-            }
-          }
-          suffix_node = ART::N::getSuffixLink(suffix_node);
-        }
-        if (!suffix_node) { suffix_node = trie_->root; }
-        assert(suffix_node->isLastByteOfCodePoint());
-        ART::N::setSuffixLink(suffix_node, n);
-        ART::N::setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : ART::N::getOutputLink(suffix_node), n);
-        assert((ART::N::getOutputLink(n) == nullptr) || (ART::N::getOutputLink(n)->isTerminalNode()));
-        fmt::println("3. Emplace {:p}", fmt::ptr(n));
-        bfs_stack.emplace(n, n, item.level + 1, "");
-      } else {
-        fmt::println("4. Emplace {:p}", fmt::ptr(n));
-        bfs_stack.emplace(n, item.last_valid_parent, item.level + 1,
-                          item.current_intermediate_str + static_cast<char>(key));
+      // #2. Intermediary bytes of a code point, do not evaluate AhoCorasick suffix and output links
+      if (!child_node->isLastByteOfCodePoint()) {
+        // Intermediate byte => extend the partial sequence
+        std::array<uint8_t, 6> new_bytes = item.bytes_since_last_cp;
+        assert(item.length < 6);  // Historic UTF-8 safety
+        new_bytes[item.length] = byte;
+
+        bfs_queue.push(
+          BFSNodeItem{child_node, item.last_codepoint_node, new_bytes, static_cast<uint8_t>(item.length + 1)});
+        continue;
       }
+
+      // #3. Child is last byte of a code point => compute suffix link
+      assert(child_node->isLastByteOfCodePoint());
+      ART::N *suffix_node = ART::N::getSuffixLink(item.last_codepoint_node);
+
+      while (suffix_node) {
+        ART::N *possible_suffix = suffix_node;
+        assert(possible_suffix->isLastByteOfCodePoint());
+        bool match = true;
+        // Walk the partial byte sequence to find suffix
+        for (uint8_t idx = 0; idx < item.length; ++idx) {
+          auto next = ART::N::getChild(item.bytes_since_last_cp[idx], possible_suffix);
+          if (!next) {
+            match = false;
+            break;
+          }
+          possible_suffix = next;
+        }
+        if (match) {
+          auto next = ART::N::getChild(byte, possible_suffix);
+          if (next) {
+            assert(next->isLastByteOfCodePoint());
+            suffix_node = next;
+            break;
+          }
+        }
+        suffix_node = ART::N::getSuffixLink(suffix_node);
+      }
+      if (!suffix_node) { suffix_node = trie_->root; }
+      assert(suffix_node->isLastByteOfCodePoint());
+
+      // Set suffix and output links
+      ART::N::setSuffixLink(suffix_node, child_node);
+      ART::N::setOutputLink(suffix_node->isTerminalNode() ? suffix_node : ART::N::getOutputLink(suffix_node),
+                            child_node);
+      assert(!ART::N::getOutputLink(child_node) || ART::N::getOutputLink(child_node)->isTerminalNode());
+
+      // Reset intermediate bytes for next BFS
+      bfs_queue.push(BFSNodeItem{child_node, child_node, {}, 0});
     }
   }
 }

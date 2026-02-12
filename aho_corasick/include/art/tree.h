@@ -57,19 +57,24 @@ class Tree {
 
     // -----------------------------
     // Step 1: Build isEndCodePoint array
+    // IMPORTANT: the index of this array should correspond to the trie's level
+    // That is, the level of the trie's root is 0, which corresponds to an empty string
+    // For a literal of `abc` to be inserted into the trie, the levels of corresponding bytes are:
+    //  (a = 1), (b = 2), (c = 3)
+    // That's why we use `isEndCodePoint[b - keyword + 1] = false` rather than `isEndCodePoint[b - keyword] = false`
     // -----------------------------
-    std::vector<bool> isEndCodePoint(keywordLen + mustAppendNull, true);
+    std::vector<bool> isEndCodePoint(keywordLen + mustAppendNull + 1, true);
     const char *end = keyword + keywordLen + mustAppendNull;
     for (auto ptr = keyword; ptr < end;) {
       auto result         = umbra::Utf8::readCodePoint(ptr, end);
       const char *nextPtr = result.next;
       // All bytes except the last are not end of code point
-      for (const char *b = ptr; b < nextPtr - 1; ++b) { isEndCodePoint[b - keyword] = false; }
+      for (const char *b = ptr; b < nextPtr - 1; ++b) { isEndCodePoint[b - keyword + 1] = false; }
       ptr = nextPtr;
     }
 
     // -----------------------------
-    // Step 1: Normal trie insertion
+    // Step 2: Trie insertion
     // -----------------------------
     EpocheGuard epocheGuard(epocheInfo);
     int restartCount = 0;

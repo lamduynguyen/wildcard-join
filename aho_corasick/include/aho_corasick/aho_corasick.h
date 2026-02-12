@@ -98,11 +98,21 @@ class AhoCorasick {
   auto ContinueParseText(IterativeParseText &ite) -> OutputEmitType;
 
  private:
-  struct SuffixLinkQueueItem {
-    ART::N *cur;
-    ART::N *last_valid_parent;
-    uint32_t level;
-    std::string current_intermediate_str;
+  /**
+   * @brief Represents an item in the BFS queue used for constructing
+   *        suffix and output links in a Unicode-aware Aho-Corasick automaton.
+   *
+   * - `node`: The current node being processed in the BFS.
+   * - `last_codepoint_node`: The closest ancestor node corresponding to the end of a complete Unicode code point.
+   * - `intermediate_bytes`: The byte sequence from `last_codepoint_node` to `node`.
+   *
+   * Note: If `node` represents the end of a code point, then `node == last_codepoint_node`.
+   */
+  struct BFSNodeItem {
+    ART::N *node;                                /// Current BFS node
+    ART::N *last_codepoint_node;                 /// Closest ancestor node ending a code point
+    std::array<uint8_t, 6> bytes_since_last_cp;  /// Bytes from last_codepoint_node to this node
+    uint8_t length;
   };
 
   FRIEND_TEST(TestAhoCorasick, SingleByteUnicode);

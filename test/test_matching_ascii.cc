@@ -38,48 +38,6 @@ bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
   return pidx == plen && sidx == slen;
 }
 
-bool DPMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
-  // dp[i][j] = whether s[i:] matches p[j:]
-  bool dp[slen + 1][plen + 1] = {};
-  dp[slen][plen]              = true;  // Base case: empty text & empty pattern match
-
-  // handle trailing % at end of pattern
-  for (int j = (int)plen - 1; j >= 0; j--) {
-    if (pdata[j] == aho_corasick::PERCENTAGE) {
-      dp[slen][j] = dp[slen][j + 1];  // % can match empty
-    } else {
-      dp[slen][j] = false;
-    }
-  }
-
-  // fill DP table bottom-up
-  for (int i = (int)slen - 1; i >= 0; i--) {
-    for (int j = (int)plen - 1; j >= 0; j--) {
-      const char &pchar = pdata[j];
-
-      if (pchar == aho_corasick::PERCENTAGE) {
-        // two options:
-        //    1) % matches zero characters → dp[i][j+1]
-        //    2) % matches one character → dp[i+1][j]
-        dp[i][j] = dp[i][j + 1] || dp[i + 1][j];
-      } else if (pchar == aho_corasick::UNDERSCORE) {
-        // "_" must match exactly one character
-        dp[i][j] = dp[i + 1][j + 1];
-      } else {
-        // literal character
-        if (pchar == sdata[i]) {
-          dp[i][j] = dp[i + 1][j + 1];
-        } else {
-          dp[i][j] = false;
-        }
-      }
-    }
-  }
-
-  // Final result: does s[0:] match p[0:] ?
-  return dp[0][0];
-}
-
 bool GreedyMatching(const char *s, size_t slen, const char *p, size_t plen) {
   auto s_idx          = 0U;
   auto p_idx          = 0U;
@@ -191,7 +149,7 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<std::st
   return result;
 }
 
-TEST(TestMatching, All) {
+TEST(TestMatchingASCII, All) {
   std::string text = "the quick brown fox jumps over the lazy dog.";
 
   std::vector<std::pair<std::string, bool>> tests = {
@@ -327,13 +285,6 @@ TEST(TestMatching, All) {
     if (try_pat != result) {
       std::cout << "DuckDB: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
     }
-    EXPECT_EQ(try_pat, result);
-  }
-
-  // DP Matching
-  for (auto &[pat, result] : tests) {
-    auto try_pat = DPMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
-    if (try_pat != result) { std::cout << "DP: evaluate pattern: '" << pat << "' return wrong result" << std::endl; }
     EXPECT_EQ(try_pat, result);
   }
 

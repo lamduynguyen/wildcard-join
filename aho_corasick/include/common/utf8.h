@@ -139,11 +139,16 @@ namespace Utf8 {
 }
 
 //---------------------------------------------------------------------------
+static constexpr unsigned clz(uint8_t a) noexcept {
+  assert(a);
+  return static_cast<unsigned>(static_cast<unsigned>(__builtin_clz(a)) - (8 * (sizeof(unsigned) - sizeof(uint8_t))));
+}
+
 static inline unsigned multiByteSequenceLength(char firstByte) noexcept
 // Compute the length of a multi-byte utf8 sequence from the header byte
 {
   // The header has the form 1...10<bits>, where the number of 1s is the number of bytes.
-  unsigned len = __builtin_clz(~firstByte);
+  unsigned len = clz(~firstByte);
   return len ? len : 1;
 }
 

@@ -8,7 +8,6 @@
 
 namespace ART {
 
-// TODO: Should we consider null to be a codepoint end?
 Tree::Tree() : root(N256::makeNode(true)) {}
 
 Tree::~Tree() {

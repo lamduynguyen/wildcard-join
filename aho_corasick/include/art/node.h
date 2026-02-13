@@ -79,6 +79,8 @@ class N {
 
   static bool isObsolete(uint64_t version);
 
+  inline bool isLastByteOfCodePoint() { return isCodePointEnd; }
+
   /**
    * can only be called when node is locked
    */

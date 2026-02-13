@@ -11,6 +11,8 @@ uint64_t N::convertTypeToVersion(NTypes type) { return (static_cast<uint64_t>(ty
 
 NTypes N::getType() const { return static_cast<NTypes>(typeVersionLockObsolete.load(std::memory_order_relaxed) >> 62); }
 
+uint32_t N::getCount() const { return count; }
+
 void N::writeLockOrRestart(bool &needRestart) {
   uint64_t version;
   version = readLockOrRestart(needRestart);

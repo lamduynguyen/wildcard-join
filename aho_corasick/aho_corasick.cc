@@ -33,53 +33,103 @@ void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const Patter
 }
 
 void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
-  // Single-threaded for now. TODO: Do we need multi-threaded version?
-  auto bfs_stack = std::queue<std::pair<ART::N *, uint32_t>>();
-  bfs_stack.emplace(trie_->root, 0);
+  // Single-threaded BFS for constructing suffix and output links
+  std::queue<BFSNodeItem> bfs_queue;
+  bfs_queue.push(BFSNodeItem{trie_->root, trie_->root, {}, 0});
 
-  while (!bfs_stack.empty()) {
-    auto [node, node_level] = bfs_stack.front();
-    bfs_stack.pop();
+  while (!bfs_queue.empty()) {
+    BFSNodeItem item = bfs_queue.front();
+    bfs_queue.pop();
 
-    // get current node's children
+    // Get children of current node
     std::tuple<uint8_t, ART::N *> children[256];
     uint32_t children_cnt = 0;
-    ART::N::getChildren(node, 0u, 255u, children, children_cnt);
+    ART::N::getChildren(item.node, 0u, 255u, children, children_cnt);
 
-    // children of the root node all point suffix link to the root
-    if (node == trie_->root) {
-      for (auto i = 0; i < children_cnt; ++i) {
-        const auto key = std::get<0>(children[i]);
-        const auto n   = std::get<1>(children[i]);
-        if (!ART::N::isLeaf(n)) {
-          ART::N::setSuffixLink(node, n);
-          bfs_stack.emplace(n, node_level + 1);
+    // --- Handle root node ---
+    if (item.node == trie_->root) {
+      assert(item.node->isLastByteOfCodePoint());
+
+      for (uint32_t i = 0; i < children_cnt; ++i) {
+        const uint8_t byte = std::get<0>(children[i]);
+        ART::N *child_node = std::get<1>(children[i]);
+        if (ART::N::isLeaf(child_node)) { continue; }
+
+        if (child_node->isLastByteOfCodePoint()) {
+          // Child is end of code point => suffix link points to root
+          ART::N::setSuffixLink(trie_->root, child_node);
+          bfs_queue.push(BFSNodeItem{child_node, child_node, {}, 0});
+        } else {
+          // Child is intermediate byte => start new partial sequence
+          std::array<uint8_t, 6> partial_bytes{};
+          partial_bytes[0] = byte;
+          bfs_queue.push(BFSNodeItem{child_node, item.node, partial_bytes, 1});
         }
       }
       continue;
     }
 
-    // otherwise, start matching new suffix link
-    for (auto i = 0; i < children_cnt; ++i) {
-      const auto key = std::get<0>(children[i]);
-      const auto n   = std::get<1>(children[i]);
+    // --- Handle non-root node ---
+    for (uint32_t i = 0; i < children_cnt; ++i) {
+      const uint8_t byte = std::get<0>(children[i]);
+      ART::N *child_node = std::get<1>(children[i]);
 
-      if (key != NULL_TERMINATOR) {
-        auto suffix_node = ART::N::getSuffixLink(node);
-        do {
-          auto possible_suffix = ART::N::getChild(key, suffix_node);
-          if (possible_suffix != nullptr) {
-            suffix_node = possible_suffix;
+      // #1. A leaf node that contain literal here, continue
+      if (byte == NULL_TERMINATOR) {
+        assert(ART::N::isLeaf(child_node));
+        continue;
+      }
+
+      // #2. Intermediary bytes of a code point, do not evaluate AhoCorasick suffix and output links
+      if (!child_node->isLastByteOfCodePoint()) {
+        // Intermediate byte => extend the partial sequence
+        std::array<uint8_t, 6> new_bytes = item.bytes_since_last_cp;
+        assert(item.length < 6);  // Historic UTF-8 safety
+        new_bytes[item.length] = byte;
+
+        bfs_queue.push(
+          BFSNodeItem{child_node, item.last_codepoint_node, new_bytes, static_cast<uint8_t>(item.length + 1)});
+        continue;
+      }
+
+      // #3. Child is last byte of a code point => compute suffix link
+      assert(child_node->isLastByteOfCodePoint());
+      ART::N *suffix_node = ART::N::getSuffixLink(item.last_codepoint_node);
+
+      while (suffix_node) {
+        ART::N *possible_suffix = suffix_node;
+        assert(possible_suffix->isLastByteOfCodePoint());
+        bool match = true;
+        // Walk the partial byte sequence to find suffix
+        for (uint8_t idx = 0; idx < item.length; ++idx) {
+          auto next = ART::N::getChild(item.bytes_since_last_cp[idx], possible_suffix);
+          if (!next) {
+            match = false;
             break;
           }
-          suffix_node = ART::N::getSuffixLink(suffix_node);
-        } while (suffix_node);
-        if (!suffix_node) { suffix_node = trie_->root; }
-        ART::N::setSuffixLink(suffix_node, n);
-        ART::N::setOutputLink((suffix_node->isTerminalNode()) ? suffix_node : ART::N::getOutputLink(suffix_node), n);
-        assert((ART::N::getOutputLink(n) == nullptr) || (ART::N::getOutputLink(n)->isTerminalNode()));
-        bfs_stack.emplace(n, node_level + 1);
+          possible_suffix = next;
+        }
+        if (match) {
+          auto next = ART::N::getChild(byte, possible_suffix);
+          if (next) {
+            assert(next->isLastByteOfCodePoint());
+            suffix_node = next;
+            break;
+          }
+        }
+        suffix_node = ART::N::getSuffixLink(suffix_node);
       }
+      if (!suffix_node) { suffix_node = trie_->root; }
+      assert(suffix_node->isLastByteOfCodePoint());
+
+      // Set suffix and output links
+      ART::N::setSuffixLink(suffix_node, child_node);
+      ART::N::setOutputLink(suffix_node->isTerminalNode() ? suffix_node : ART::N::getOutputLink(suffix_node),
+                            child_node);
+      assert(!ART::N::getOutputLink(child_node) || ART::N::getOutputLink(child_node)->isTerminalNode());
+
+      // Reset intermediate bytes for next BFS
+      bfs_queue.push(BFSNodeItem{child_node, child_node, {}, 0});
     }
   }
 }
@@ -92,37 +142,43 @@ auto AhoCorasick::ParseText(const char *text, size_t text_len) -> OutputEmitType
    * - In our implementation, we directly store all output links (the NULL TERMINATOR node) as the trie leaf
    */
   OutputEmitType result;
-  auto iterate = StartIterativeParseText(text, text_len);
-  for (auto idx = 0UL; idx < text_len; idx++) {
+  auto iterate = IterativeParseText(text, text_len, trie_->root);
+  while (iterate.CanAdvanceOneCodePoint()) {
     auto next_set = ContinueParseText(iterate);
     result.merge(next_set);
   }
   return result;
 }
 
-auto AhoCorasick::StartIterativeParseText(const char *text, size_t text_len) -> IterativeParseText {
-  auto ret        = IterativeParseText();
-  ret.text        = text;
-  ret.text_len    = text_len;
-  ret.next_offset = 0;
-  ret.ptr         = trie_->root;
-  return ret;
+auto AhoCorasick::VisitCodePoint(ART::N *cur, const char *cp, u8 cp_len) -> ART::N * {
+  assert(cur->isLastByteOfCodePoint());
+  for (auto idx = 0U; idx < cp_len; idx++) {
+    auto next = ART::N::getChild(cp[idx], cur);
+    if (next == nullptr) { return nullptr; }
+    if (idx > 0) { assert(!cur->isLastByteOfCodePoint()); }
+    cur = next;
+  }
+  return cur;
 }
 
 // The caller
 auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
   OutputEmitType result;
 
-  auto c             = ite.text[ite.next_offset];
-  auto possible_next = ART::N::getChild(c, ite.ptr);
+  // Retrieve next code point
+  auto cp         = ite.text + ite.text_offset;
+  auto advance_cp = umbra::Utf8::readCodePoint(cp, ite.text + ite.text_len);
+  auto cp_len     = advance_cp.next - cp;
+
   // Three cases:
   //  1. If the next possible state is a nullptr, we go back to root
   //  2. If the next possible state is a leaf (due to lazy expansive + end all keywords as NULL terminator),
   //      we go back to root and output that pattern
   //  3. Otherwise, move forward to that state
+  auto possible_next = VisitCodePoint(ite.ptr, cp, cp_len);
   while (ite.ptr != trie_->root && possible_next == nullptr) {
     ite.ptr       = ART::N::getSuffixLink(ite.ptr);
-    possible_next = ART::N::getChild(c, ite.ptr);
+    possible_next = VisitCodePoint(ite.ptr, cp, cp_len);
   }
   assert((possible_next != nullptr) || (ite.ptr == trie_->root));  // assertion for case #1
   if (possible_next != nullptr) {
@@ -131,7 +187,7 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
     if (ite.ptr->isTerminalNode()) {
       // case #2: matching for 2nd case
       auto leaf = ART::N::getChild(NULL_TERMINATOR, possible_next);
-      AppendResult(ite, leaf, result);
+      AppendResult(ite, leaf, cp_len, result);
     }
   }
   // Evaluate output links
@@ -139,21 +195,22 @@ auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
   while (output_link != nullptr) {
     if (output_link->isTerminalNode()) {
       auto leaf = ART::N::getChild(NULL_TERMINATOR, output_link);
-      AppendResult(ite, leaf, result);
+      AppendResult(ite, leaf, cp_len, result);
     }
     output_link = ART::N::getOutputLink(output_link);  // follow the suffix-link chain
   }
 
   // Advance next offset in the text for next processing
-  ite.next_offset++;
+  ite.text_offset += cp_len;
+  ite.iterator_idx++;
   return result;
 }
 
-void AhoCorasick::AppendResult(const IterativeParseText &ite, ART::N *leaf, OutputEmitType &out_result) {
+void AhoCorasick::AppendResult(const IterativeParseText &ite, ART::N *leaf, size_t cp_len, OutputEmitType &out_result) {
   assert(ART::N::isLeaf(leaf));
   auto keyword_id  = ART::N::getLeaf(leaf)->auxIndex;
   auto literal_len = ART::N::getLeaf(leaf)->keyLenWithoutNullTerminator();
-  auto match_pos   = ite.next_offset - literal_len + 1;
+  auto match_pos   = ite.text_offset - literal_len + cp_len;
   auto &bitmap     = literal_map_[keyword_id];
   for (auto value : bitmap) {
     auto pattern_idx = PatternIndexType::FromUint(value);

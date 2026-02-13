@@ -8,5 +8,6 @@ if(ENABLE_TESTING)
 
   ADD_TEST(TestArt test_art.cc)
   ADD_TEST(TestAhoCorasick test_ahocorasick.cc)
-  ADD_TEST(TestMatching test_matching.cc)
+  ADD_TEST(TestMatchingASCII test_matching_ascii.cc)
+  ADD_TEST(TestMatchingUnicode test_matching_unicode.cc)
 endif()

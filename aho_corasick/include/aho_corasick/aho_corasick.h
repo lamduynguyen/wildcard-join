@@ -89,18 +89,43 @@ class AhoCorasick {
 
   struct IterativeParseText {
     const char *text;
-    size_t text_len;
-    size_t next_offset;
+    const size_t text_len;
+    size_t text_offset;
+    size_t iterator_idx;
     ART::N *ptr;
+
+    IterativeParseText(const char *text, size_t text_len, ART::N *automaton_root)
+        : text(text), text_len(text_len), text_offset(0), iterator_idx(0), ptr(automaton_root) {}
+
+    inline auto CanAdvanceOneCodePoint() { return text_offset < text_len; }
   };
 
-  auto StartIterativeParseText(const char *text, size_t text_len) -> IterativeParseText;
+  auto GetRoot() -> ART::N *;
   auto ContinueParseText(IterativeParseText &ite) -> OutputEmitType;
 
  private:
-  FRIEND_TEST(TestAhoCorasick, SuffixLink);
-  auto GetRoot() -> ART::N *;
-  void AppendResult(const IterativeParseText &ite, ART::N *leaf, OutputEmitType &out_result);
+  FRIEND_TEST(TestAhoCorasick, SingleByteUnicode);
+  FRIEND_TEST(TestAhoCorasick, MultiByteUnicode);
+
+  /**
+   * @brief Represents an item in the BFS queue used for constructing
+   *        suffix and output links in a Unicode-aware Aho-Corasick automaton.
+   *
+   * - `node`: The current node being processed in the BFS.
+   * - `last_codepoint_node`: The closest ancestor node corresponding to the end of a complete Unicode code point.
+   * - `intermediate_bytes`: The byte sequence from `last_codepoint_node` to `node`.
+   *
+   * Note: If `node` represents the end of a code point, then `node == last_codepoint_node`.
+   */
+  struct BFSNodeItem {
+    ART::N *node;                                /// Current BFS node
+    ART::N *last_codepoint_node;                 /// Closest ancestor node ending a code point
+    std::array<uint8_t, 6> bytes_since_last_cp;  /// Bytes from last_codepoint_node to this node
+    uint8_t length;  /// TODO: Only used if we want to parallelize the Suffix link construction
+  };
+
+  void AppendResult(const IterativeParseText &ite, ART::N *leaf, size_t cp_len, OutputEmitType &out_result);
+  auto VisitCodePoint(ART::N *cur, const char *cp, u8 cp_len) -> ART::N *;
 
   std::unique_ptr<ART::Tree> trie_;
   tbb::concurrent_unordered_map<TupleID, roaring::Roaring64Map> literal_map_;

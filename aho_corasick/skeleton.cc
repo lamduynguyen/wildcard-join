@@ -1,35 +1,34 @@
 #include "aho_corasick/skeleton.h"
 
 #include "common/rand.h"
-#include "fmt/format.h"
 
 namespace aho_corasick {
 
 // --------------------------------------------------------------------------------------------
-void Skeleton::Segment::Insert(pat_off_t start_pos) {
+void Skeleton::Segment::Insert(u16 start_pos) {
   literal_offset.emplace_back(start_pos);
   lit_off_p.emplace(start_pos, literal_offset.size() - 1);
 }
 
-auto Skeleton::Segment::Contain(pat_off_t start_pos) const -> bool { return lit_off_p.contains(start_pos); }
+auto Skeleton::Segment::Contain(u16 start_pos) const -> bool { return lit_off_p.contains(start_pos); }
 
-auto Skeleton::Segment::IsFirstLiteral(pat_off_t start_pos) const -> bool {
+auto Skeleton::Segment::IsFirstLiteral(u16 start_pos) const -> bool {
   assert(Contain(start_pos));
   return lit_off_p.at(start_pos) == 0;
 }
 
-auto Skeleton::Segment::IsLastLiteral(pat_off_t start_pos) const -> bool {
+auto Skeleton::Segment::IsLastLiteral(u16 start_pos) const -> bool {
   assert(Contain(start_pos));
   return lit_off_p.at(start_pos) == literal_offset.size() - 1;
 }
 
-auto Skeleton::Segment::IsPreviousLiteral(pat_off_t prev_start_pos, pat_off_t start_pos) const -> bool {
+auto Skeleton::Segment::IsPreviousLiteral(u16 prev_start_pos, u16 start_pos) const -> bool {
   assert(Contain(start_pos));
   auto pos = lit_off_p.at(start_pos);
   return (pos > 0) && (literal_offset[pos - 1] == prev_start_pos);
 }
 
-auto Skeleton::Segment::GetNextLiteralOffset(pat_off_t start_pos) const -> pat_off_t {
+auto Skeleton::Segment::GetNextLiteralOffset(u16 start_pos) const -> u16 {
   assert(!IsLastLiteral(start_pos));
   auto pos = lit_off_p.at(start_pos);
   return literal_offset[pos + 1];
@@ -96,14 +95,16 @@ auto Skeleton::MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) ->
          ac_match.text_start_pos >= matcher.min_text_start_pos_;
 }
 
-auto Skeleton::TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &matcher, u64 &out_underscore_cnt)
-  -> bool {
-  const auto &segment = seg_[matcher.segment_idx_];
-  const auto diff     = ac_match.text_start_pos - ac_match.pattern_index.start_pos;
+auto Skeleton::TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &matcher, u64 curr_cp_index,
+                                  DelayedMatchQueue &delay_queue) -> bool {
+  if (!MayMatch(ac_match, matcher)) { return false; }
+  const auto &segment      = seg_[matcher.segment_idx_];
+  const auto diff          = ac_match.text_start_pos - ac_match.pattern_index.start_pos;
+  auto next_literal_offset = 0;
+  if (!segment.IsLastLiteral(ac_match.pattern_index.start_pos)) {
+    next_literal_offset = segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos);
+  }
 
-  // TODO: How to match from text[ac_match.text_start_pos + ac_match.literal_len] with ..underscore_count
-  // underscore_count = segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos) -
-  //                      ac_match.pattern_index.start_pos ac_match has ac_match.literal_len
   if (segment.IsFirstLiteral(ac_match.pattern_index.start_pos)) {
     /**
      * @brief Two scenarios:
@@ -116,10 +117,10 @@ auto Skeleton::TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &m
       // simply return true for last literal
       if (segment.IsLastLiteral(ac_match.pattern_index.start_pos)) { return true; }
       // otherwise, return the underscore count, which is used to determine the number of skipped code points
-      assert(segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos) >=
-             ac_match.pattern_index.start_pos + ac_match.literal_len);
-      out_underscore_cnt = segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos) -
-                           ac_match.pattern_index.start_pos - ac_match.literal_len;
+      assert(next_literal_offset >= ac_match.pattern_index.start_pos + ac_match.literal_len);
+      auto underscore_cnt = next_literal_offset - ac_match.pattern_index.start_pos - ac_match.literal_len;
+      delay_queue.Schedule(ac_match.pattern_index.pattern_id, underscore_cnt + curr_cp_index, next_literal_offset,
+                           ac_match.pattern_index.start_pos);
       return true;
     }
   } else if (matcher.Contain(diff)) {
@@ -129,10 +130,10 @@ auto Skeleton::TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &m
       // simply return true for last literal
       if (segment.IsLastLiteral(ac_match.pattern_index.start_pos)) { return true; }
       // otherwise, return the underscore count, which is used to determine the number of skipped code points
-      assert(segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos) >=
-             ac_match.pattern_index.start_pos + ac_match.literal_len);
-      out_underscore_cnt = segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos) -
-                           ac_match.pattern_index.start_pos - ac_match.literal_len;
+      assert(next_literal_offset >= ac_match.pattern_index.start_pos + ac_match.literal_len);
+      auto underscore_cnt = next_literal_offset - ac_match.pattern_index.start_pos - ac_match.literal_len;
+      delay_queue.Schedule(ac_match.pattern_index.pattern_id, underscore_cnt + curr_cp_index, next_literal_offset,
+                           ac_match.pattern_index.start_pos);
       return true;
     }
   }
@@ -141,14 +142,14 @@ auto Skeleton::TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &m
 }
 
 /**
- * We can only advance to the next sket, i.e., satisfy current matcher, if one of the following conditions is satisfied:
+ * We can only advance to the next segment if one of the following conditions is satisfied:
  * - Current segment is not the last one of the skeleton
- * - Current segment is the last one and has a suffix aho_corasick::PERCENTAGE
- * - Current segment is the last one, doesn't have a suffix aho_corasick::PERCENTAGE, and the AhoCorasick matcher
+ * - Current segment is the last one and has a PERCENTAGE suffix
+ * - Current segment is the last one, doesn't have a PERCENTAGE suffix, and the AhoCorasick matcher
  *    states that the current matching is the suffix of the queried text, including suffixed underscores
  */
-auto Skeleton::SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, const char *text,
-                              u64 text_length) -> bool {
+auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, const Matcher &matcher, const char *text,
+                                u64 text_length) -> bool {
   const auto &segment  = seg_[matcher.segment_idx_];
   auto next_sket_index = matcher.segment_idx_ + 1;
   if ((next_sket_index < seg_.size()) ||                                     // 1st scenario
@@ -177,7 +178,7 @@ auto Skeleton::AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher)
   matcher.min_text_start_pos_ = min_text_next_start_pos;
   if (matcher.segment_idx_ < seg_.size()) {
     auto &next_segment = seg_[matcher.segment_idx_];
-    matcher.match_     = LRUCache<u64, pat_off_t>(next_segment.max_underscore_cnt + 1);
+    matcher.match_     = LRUCache<u64, u16>(next_segment.max_underscore_cnt + 1);
     return true;
   }
   return false;

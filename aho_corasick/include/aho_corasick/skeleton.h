@@ -44,7 +44,7 @@ class Skeleton {
 
     inline auto CurrentSegmentIdx() { return segment_idx_; }
 
-    inline auto Get(u64 text_pat_diff) const { return match_.Get(text_pat_diff); }
+    inline auto GetAndRemove(u64 text_pat_diff) { return match_.GetAndRemove(text_pat_diff); }
 
     inline auto Contain(u64 text_pat_diff) const { return match_.Contain(text_pat_diff); }
 
@@ -85,7 +85,7 @@ class Skeleton {
     auto IsFirstLiteral(pat_off_t start_pos) const -> bool;
     auto IsLastLiteral(pat_off_t start_pos) const -> bool;
     auto IsPreviousLiteral(pat_off_t prev_start_pos, pat_off_t start_pos) const -> bool;
-    auto GetNextLiteralOffset(pat_off_t start_pos) -> pat_off_t;
+    auto GetNextLiteralOffset(pat_off_t start_pos) const -> pat_off_t;
   };
 
   Skeleton(const char *p, size_t plen, const std::function<void(Token &)> &literal_fn);
@@ -107,8 +107,9 @@ class Skeleton {
   /* Matching utilities */
   auto InitializeMatcher() -> Matcher;
   auto MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
-  auto TryMatching(const MatchingOutputType &ac_match, Matcher &matcher) -> bool;
-  auto SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, u64 text_length) -> bool;
+  auto TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &matcher, u64 &out_underscore_cnt) -> bool;
+  auto SatisfyMatcher(const MatchingOutputType &ac_match, const Matcher &matcher, const char *text, u64 text_length)
+    -> bool;
   auto AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher) -> bool;
 
  private:

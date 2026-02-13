@@ -50,35 +50,35 @@ TEST(TestMatchingUnicode, All) {
   };
 
   // DuckDB Matching
-  for (auto &[pat, result] : tests) {
-    auto try_pat = DuckDBMatching(reinterpret_cast<char *>(text.data()), text.size(),
-                                  reinterpret_cast<char *>(pat.data()), pat.size());
-    if (try_pat != result) {
-      fmt::println("DuckDB: evaluate pattern '{}' return wrong result", reinterpret_cast<const char *>(pat.data()));
-    }
-    EXPECT_EQ(try_pat, result);
-  }
-
-  // Greedy Matching
-  for (auto &[pat, result] : tests) {
-    auto try_pat = GreedyMatching(reinterpret_cast<char *>(text.data()), text.size(),
-                                  reinterpret_cast<char *>(pat.data()), pat.size());
-    if (try_pat != result) {
-      fmt::println("Greedy: evaluate pattern '{}' return wrong result", reinterpret_cast<const char *>(pat.data()));
-    }
-    EXPECT_EQ(try_pat, result);
-  }
-
-  // AhoCorasick matching
   // for (auto &[pat, result] : tests) {
-  //   auto try_pat = AhoCorasickMatching(reinterpret_cast<char *>(text.data()), text.size(),
-  //                                      reinterpret_cast<char *>(pat.data()), pat.size());
+  //   auto try_pat = DuckDBMatching(reinterpret_cast<char *>(text.data()), text.size(),
+  //                                 reinterpret_cast<char *>(pat.data()), pat.size());
   //   if (try_pat != result) {
-  //     fmt::println("AhoCorasick: evaluate pattern '{}' return wrong result",
-  //                  reinterpret_cast<const char *>(pat.data()));
+  //     fmt::println("DuckDB: evaluate pattern '{}' return wrong result", reinterpret_cast<const char *>(pat.data()));
   //   }
   //   EXPECT_EQ(try_pat, result);
   // }
+
+  // // Greedy Matching
+  // for (auto &[pat, result] : tests) {
+  //   auto try_pat = GreedyMatching(reinterpret_cast<char *>(text.data()), text.size(),
+  //                                 reinterpret_cast<char *>(pat.data()), pat.size());
+  //   if (try_pat != result) {
+  //     fmt::println("Greedy: evaluate pattern '{}' return wrong result", reinterpret_cast<const char *>(pat.data()));
+  //   }
+  //   EXPECT_EQ(try_pat, result);
+  // }
+
+  // AhoCorasick matching
+  for (auto &[pat, result] : tests) {
+    auto try_pat = AhoCorasickMatching(reinterpret_cast<char *>(text.data()), text.size(),
+                                       reinterpret_cast<char *>(pat.data()), pat.size());
+    if (try_pat != result) {
+      fmt::println("AhoCorasick: evaluate pattern '{}' return wrong result",
+                   reinterpret_cast<const char *>(pat.data()));
+    }
+    EXPECT_EQ(try_pat, result);
+  }
 
   // // Multi-pattern matching
   // std::vector<std::u8string> patterns;

@@ -16,7 +16,7 @@ class LRUCache {
 
   LRUCache(size_t max_size = 0) : max_size_(max_size) {}
 
-  void Upsert(const key_t &key, const value_t &value) {
+  inline void Upsert(const key_t &key, const value_t &value) {
     auto it = item_map_.find(key);
     item_list_.push_front(key_value_pair_t(key, value));
     if (it != item_map_.end()) {
@@ -33,15 +33,18 @@ class LRUCache {
     }
   }
 
-  auto Get(const key_t &key) const -> value_t {
+  inline auto GetAndRemove(const key_t &key) -> value_t {
     auto it = item_map_.find(key);
     assert(it != item_map_.end());
-    return it->second->second;
+    auto val = it->second->second;
+    item_list_.erase(it->second);
+    item_map_.erase(it);
+    return val;
   }
 
-  auto Contain(const key_t &key) const { return item_map_.find(key) != item_map_.end(); }
+  inline auto Contain(const key_t &key) const { return item_map_.find(key) != item_map_.end(); }
 
-  auto Size() const { return item_map_.size(); }
+  inline auto Size() const { return item_map_.size(); }
 
  private:
   std::list<key_value_pair_t> item_list_;

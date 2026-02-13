@@ -1,6 +1,7 @@
 #include "aho_corasick/aho_corasick.h"
 #include "aho_corasick/skeleton.h"
 #include "common/utf8.h"
+#include "fmt/format.h"
 
 #include <cstdlib>
 #include <deque>
@@ -25,13 +26,9 @@ bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
         pidx  = pchar.next - pdata;
         pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
       }
-      if (pidx == plen) {
-        return true; /* tail is acceptable */
-      }
+      if (pidx == plen) { return true; /* tail is acceptable */ }
       for (; sidx < slen;) {
-        if (DuckDBMatching(sdata + sidx, slen - sidx, pdata + pidx, plen - pidx)) {
-          return true;
-        }
+        if (DuckDBMatching(sdata + sidx, slen - sidx, pdata + pidx, plen - pidx)) { return true; }
         sidx  = schar.next - sdata;
         schar = umbra::Utf8::readCodePoint(&sdata[sidx], sdata + slen);
       }
@@ -114,7 +111,6 @@ bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
   return pidx == plen;
 }
 
-// TODO: Update two AhoCorasick matching below for unicode code point
 bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen) {
   // Aho-Corasick env
   auto trie = aho_corasick::AhoCorasick();
@@ -132,79 +128,117 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
 
   // Start matching text
   auto instance = skeleton.InitializeMatcher();
-  auto iterate  = trie.StartIterativeParseText(s, slen);
-  for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
+  std::queue<std::tuple<u64, u64, u64, u64>> queue;
+  auto iterate = aho_corasick::AhoCorasick::IterativeParseText(s, slen, trie.GetRoot());
+
+  while (iterate.CanAdvanceOneCodePoint()) {
+    auto end_offset  = iterate.text_offset;
     auto ac_matchers = trie.ContinueParseText(iterate);
-    auto &sket       = skeleton[instance.CurrentSegmentIdx()];
+    assert(iterate.text_offset > end_offset);  // must advance cursor
+    auto recent_cp_len = iterate.text_offset - end_offset;
+    // fmt::println("Current cp idx {}", iterate.iterator_idx);
+
+    // 1st. Check the possible matched literals
+    auto &segment = skeleton[instance.CurrentSegmentIdx()];
     for (auto &match : ac_matchers) {
       // Must match within the current considerate pattern
       // Focus on the comparison: match.text_start_pos >= instance.min_text_start_pos
       if (skeleton.MayMatch(match, instance)) {
-        auto success = skeleton.TryMatching(match, instance);
-
-        // Now, check if we just insert the last match of the sket
-        if (success && sket.IsLastLiteral(match.pattern_index.start_pos) &&
-            skeleton.SatisfyMatcher(match, instance, slen)) {
-          if (!skeleton.AdvanceNextSegment(end_offset + sket.suffix_underscore_cnt + 1, instance)) { return true; }
+        auto underscore_cnt = 0UL;
+        if (skeleton.TryMatchingLiteral(match, instance, underscore_cnt)) {
+          // Now, check if we just match the last literal of the skeleton
+          if (segment.IsLastLiteral(match.pattern_index.start_pos)) {
+            // If the last `match` helps satisfy the whole skeleton, then we find a match
+            if (skeleton.SatisfyMatcher(match, instance, s, slen)) {
+              if (!skeleton.AdvanceNextSegment(end_offset + segment.suffix_underscore_cnt + 1, instance)) {
+                return true;
+              }
+            }
+          } else {
+            // Otherwise, add the matching info to the queue
+            // THis is to support Unicode, i.e., one Unicode character may correspond to multiple bytes;
+            //  which means, one _ may match multiple bytes in the text.
+            // As such, matching literals consecutively may have different positional differences between
+            //      [text_byte_offset - pattern_byte_offset]
+            // Therefore, we append the matching info to a queue, i.e., delay creating the expected mapping
+            //      <text_byte_offset => pattern_byte_offset> for subsequent literal matching
+            assert(underscore_cnt > 0);
+            fmt::println("Delay matching: [diff: {}, pat_start_pos: {}]", underscore_cnt + iterate.iterator_idx,
+                         underscore_cnt + match.pattern_index.start_pos + match.literal_len);
+            queue.emplace(underscore_cnt + iterate.iterator_idx, instance.CurrentSegmentIdx(),
+                          underscore_cnt + match.pattern_index.start_pos + match.literal_len,
+                          match.pattern_index.start_pos);
+          }
         }
       }
+    }
+
+    // 2nd. Check the queue to proceed with the delayed matching
+    while (!queue.empty() && std::get<0>(queue.front()) <= iterate.iterator_idx) {
+      auto &item    = queue.front();
+      auto &segment = skeleton[std::get<1>(item)];
+      fmt::println("Insert matching: [diff: {}, next_start_pos: {}, prev_start_pos: {}]",
+                   iterate.text_offset - std::get<2>(item), std::get<2>(item), std::get<3>(item));
+      instance.Upsert(iterate.text_offset - std::get<2>(item), std::get<3>(item));
+      queue.pop();
     }
   }
   return false;
 }
 
-template <typename StringT>
-auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT> patterns) -> std::vector<bool> {
-  // Aho-Corasick env
-  auto trie = aho_corasick::AhoCorasick();
-  auto t    = trie.Local();
-  std::vector<bool> result(patterns.size(), false);
+// template <typename StringT>
+// auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT> patterns) -> std::vector<bool> {
+//   // Aho-Corasick env
+//   auto trie = aho_corasick::AhoCorasick();
+//   auto t    = trie.Local();
+//   std::vector<bool> result(patterns.size(), false);
 
-  // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
-  std::vector<aho_corasick::Skeleton> skeleton;
-  std::vector<aho_corasick::Skeleton::Matcher> instance;
-  for (auto idx = 0U; idx < patterns.size(); idx++) {
-    auto &pat = patterns[idx];
-    skeleton.emplace_back(reinterpret_cast<char *>(pat.data()), pat.size(), [&](aho_corasick::Token &tok) {
-      trie.Insert(reinterpret_cast<char *>(pat.data()) + tok.start, tok.len, {idx, tok.start}, t);
-    });
-    if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
-      result[idx] =
-        aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, reinterpret_cast<char *>(pat.data()), pat.size());
-      instance.emplace_back(0);
-    } else {
-      instance.push_back(skeleton.back().InitializeMatcher());
-    }
-  }
+//   // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
+//   std::vector<aho_corasick::Skeleton> skeleton;
+//   std::vector<aho_corasick::Skeleton::Matcher> instance;
+//   for (auto idx = 0U; idx < patterns.size(); idx++) {
+//     auto &pat = patterns[idx];
+//     skeleton.emplace_back(reinterpret_cast<char *>(pat.data()), pat.size(), [&](aho_corasick::Token &tok) {
+//       trie.Insert(reinterpret_cast<char *>(pat.data()) + tok.start, tok.len, {idx, tok.start}, t);
+//     });
+//     if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
+//       result[idx] =
+//         aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, reinterpret_cast<char *>(pat.data()), pat.size());
+//       instance.emplace_back(0);
+//     } else {
+//       instance.push_back(skeleton.back().InitializeMatcher());
+//     }
+//   }
 
-  // Building suffix & output links
-  trie.BuildSuffixLink(1);
+//   // Building suffix & output links
+//   trie.BuildSuffixLink(1);
 
-  auto iterate = trie.StartIterativeParseText(s, slen);
-  for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
-    auto ac_matchers = trie.ContinueParseText(iterate);
+//   auto iterate = aho_corasick::AhoCorasick::IterativeParseText(s, slen, trie.GetRoot());
+//   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
+//     auto ac_matchers = trie.ContinueParseText(iterate);
 
-    for (auto &match : ac_matchers) {
-      auto pat_id   = match.pattern_index.pattern_id;
-      auto &sket    = skeleton[pat_id];
-      auto &matcher = instance[pat_id];
+//     for (auto &match : ac_matchers) {
+//       auto pat_id   = match.pattern_index.pattern_id;
+//       auto &segment    = skeleton[pat_id];
+//       auto &matcher = instance[pat_id];
 
-      if (!result[pat_id] && sket.MayMatch(match, matcher)) {
-        auto success = sket.TryMatching(match, matcher);
+//       if (!result[pat_id] && segment.MayMatch(match, matcher)) {
+//         auto success = segment.TryMatchingLiteral(match, matcher);
 
-        if (success) {
-          // Now, check if we just insert the last match of the sket
-          if (sket[matcher.CurrentSegmentIdx()].IsLastLiteral(match.pattern_index.start_pos) &&
-              sket.SatisfyMatcher(match, matcher, slen)) {
-            if (!sket.AdvanceNextSegment(end_offset + sket[matcher.CurrentSegmentIdx()].suffix_underscore_cnt + 1,
-                                         matcher)) {
-              result[pat_id] = true;
-            }
-          }
-        }
-      }
-    }
-  }
+//         if (success) {
+//           // Now, check if we just insert the last match of the segment
+//           if (segment[matcher.CurrentSegmentIdx()].IsLastLiteral(match.pattern_index.start_pos) &&
+//               segment.SatisfyMatcher(match, matcher, s, slen)) {
+//             if (!segment.AdvanceNextSegment(end_offset + segment[matcher.CurrentSegmentIdx()].suffix_underscore_cnt +
+//             1,
+//                                          matcher)) {
+//               result[pat_id] = true;
+//             }
+//           }
+//         }
+//       }
+//     }
+//   }
 
-  return result;
-}
+//   return result;
+// }

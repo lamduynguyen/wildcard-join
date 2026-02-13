@@ -120,7 +120,7 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
   auto skeleton = aho_corasick::Skeleton(
     p, plen, [&](aho_corasick::Token &tok) { trie.Insert(p + tok.start, tok.len, {0, tok.start}, t); });
   if (skeleton.IsEmpty() || skeleton.OnlyWildcard()) {
-    return aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, p, plen);
+    return aho_corasick::Skeleton::SpecialMatchEmptyPattern(s, slen, p, plen);
   }
 
   // Building suffix & output links

@@ -48,8 +48,8 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
 
     // Build between-PERCENTAGE skeleton based on the extracted token -- p[tok.start : last_end_pos]
     auto pos = tok.start;
-    for (auto pos = tok.start; pos < last_end_pos;) {
-      auto literal = Token::NextToken(p, plen, pos, match.max_underscore_cnt);
+    for (auto pos = tok.start; pos < tok.start + tok.len;) {
+      auto literal = Token::NextToken(p, tok.start + tok.len, pos, match.max_underscore_cnt);
       if (literal.start == Token::WRONG_OFFSET) {
         // this means we have a suffix _ scenario
         match.suffix_underscore_cnt = last_end_pos - pos;
@@ -71,7 +71,7 @@ Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &
 }
 
 // This should only be called if the pattern only contains % and _
-auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool {
+auto Skeleton::SpecialMatchEmptyPattern(const char *s, size_t slen, const char *p, size_t plen) -> bool {
   // Count how many _ and check if slen >= number of underscores
   auto underscore_cnt = 0UL;
   auto has_percent    = false;
@@ -82,7 +82,13 @@ auto Skeleton::SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen)
       has_percent = true;
     }
   }
-  return (slen == underscore_cnt) || (slen > underscore_cnt && has_percent);
+  auto no_cp = 0UL;
+  for (auto ptr = s; ptr < s + slen;) {
+    auto next = umbra::Utf8::readCodePoint(ptr, s + slen);
+    no_cp++;
+    ptr = next.next;
+  }
+  return (no_cp == underscore_cnt) || (no_cp > underscore_cnt && has_percent);
 }
 
 /**
@@ -187,7 +193,7 @@ auto Skeleton::AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher)
 // --------------------------------------------------------------------------------------------
 auto Token::NextToken(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> Token {
   auto prev_pos = pos;
-  while (pos < slen && IsDelim(s[pos])) { pos++; }
+  while (pos < slen && s[pos] == UNDERSCORE) { pos++; }
   max_underscore_cnt = std::max(max_underscore_cnt, pos - prev_pos);
   if (pos >= slen) {
     // no more tokens; resetting pos back to suffix processing
@@ -195,7 +201,7 @@ auto Token::NextToken(const char *s, size_t slen, u32 &pos, u32 &max_underscore_
     return {WRONG_OFFSET, 0};
   }
   auto start = pos;
-  while (pos < slen && !IsDelim(s[pos])) { pos++; }
+  while (pos < slen && s[pos] != UNDERSCORE) { pos++; }
   return {start, pos - start};
 };
 

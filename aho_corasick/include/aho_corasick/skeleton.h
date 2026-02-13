@@ -183,7 +183,7 @@ class Skeleton {
 
   inline auto Last() -> Segment & { return seg_.back(); }
 
-  static auto SpecialMatchEmptyPattern(size_t slen, const char *p, size_t plen) -> bool;
+  static auto SpecialMatchEmptyPattern(const char *s, size_t slen, const char *p, size_t plen) -> bool;
 
   /* Matching utilities */
   auto InitializeMatcher() -> Matcher;

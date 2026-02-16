@@ -1,21 +1,23 @@
 #pragma once
 
+#include "art/epoche.h"
+#include "art/tree.h"
+#include "common/typedef.h"
+#include "common/util.h"
+
+#include "gtest/gtest_prod.h"
+#include "roaring/roaring.hh"
+#include "tbb/concurrent_unordered_map.h"
+
 #include <algorithm>
 #include <atomic>
 #include <memory>
 #include <unordered_set>
 #include <vector>
 
-#include "gtest/gtest_prod.h"
-#include "roaring/roaring.hh"
-#include "tbb/concurrent_unordered_map.h"
-
-#include "art/epoche.h"
-#include "art/tree.h"
-#include "common/typedef.h"
-#include "common/util.h"
-
 namespace aho_corasick {
+
+class TextParserIterator;
 
 /**
  * @brief We support scenario where one pattern may have more than one keywords
@@ -68,9 +70,6 @@ struct MatchingOutputType {
   };
 };
 
-static_assert(sizeof(PatternIndexType) == 8);
-static_assert(sizeof(MatchingOutputType) == 24);
-
 using OutputEmitType = std::unordered_set<MatchingOutputType, MatchingOutputType::Hasher>;
 
 class AhoCorasick {
@@ -80,30 +79,18 @@ class AhoCorasick {
   AhoCorasick();
   ~AhoCorasick() = default;
 
+  // Misc
   auto Local() -> ART::ThreadInfo;
+  auto GetRoot() const -> ART::N *;
+
+  // Main APIs
+  static auto VisitCodePoint(ART::N *cur, const char *cp, u8 cp_len) -> ART::N *;
   void Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_aux_index, ART::ThreadInfo &t);
   void BuildSuffixLink(u16 number_of_threads);
 
-  // Two way to parse a text: One-round or iteratively
-  auto ParseText(const char *text, size_t text_len) -> OutputEmitType;
-
-  struct IterativeParseText {
-    const char *text;
-    const size_t text_len;
-    size_t text_offset;
-    size_t iterator_idx;
-    ART::N *ptr;
-
-    IterativeParseText(const char *text, size_t text_len, ART::N *automaton_root)
-        : text(text), text_len(text_len), text_offset(0), iterator_idx(0), ptr(automaton_root) {}
-
-    inline auto CanAdvanceOneCodePoint() { return text_offset < text_len; }
-  };
-
-  auto GetRoot() -> ART::N *;
-  auto ContinueParseText(IterativeParseText &ite) -> OutputEmitType;
-
  private:
+  friend class TextParserIterator;
+
   FRIEND_TEST(TestAhoCorasick, SingleByteUnicode);
   FRIEND_TEST(TestAhoCorasick, MultiByteUnicode);
 
@@ -124,11 +111,11 @@ class AhoCorasick {
     uint8_t length;  /// TODO: Only used if we want to parallelize the Suffix link construction
   };
 
-  void AppendResult(const IterativeParseText &ite, ART::N *leaf, size_t cp_len, OutputEmitType &out_result);
-  auto VisitCodePoint(ART::N *cur, const char *cp, u8 cp_len) -> ART::N *;
-
   std::unique_ptr<ART::Tree> trie_;
   tbb::concurrent_unordered_map<TupleID, roaring::Roaring64Map> literal_map_;
 };
+
+static_assert(sizeof(PatternIndexType) == 8);
+static_assert(sizeof(MatchingOutputType) == 24);
 
 }  // namespace aho_corasick

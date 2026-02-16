@@ -92,60 +92,9 @@ auto Skeleton::SpecialMatchEmptyPattern(const char *s, size_t slen, const char *
   return (no_cp == underscore_cnt) || (no_cp > underscore_cnt && has_percent);
 }
 
-/**
- * @brief Only match within the current considerate pattern. Two key conditions:
- * - The being-matched pattern start position must be assocated with the being-matched skeleton segment
- * - The start position in text must adhere to the positional constraint of the active skeleton matcher `instance`
- */
-auto Skeleton::MayMatch(const MatchingOutputType &ac_match, Matcher &matcher) -> bool {
-  return matcher.segment_idx_ < seg_.size() && seg_[matcher.segment_idx_].Contain(ac_match.pattern_index.start_pos) &&
-         ac_match.text_start_pos >= matcher.min_text_start_pos_;
-}
-
-auto Skeleton::TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &matcher, u64 curr_cp_index,
-                                  DelayedMatchQueue &delay_queue) -> bool {
-  if (!MayMatch(ac_match, matcher)) { return false; }
-  const auto &segment      = seg_[matcher.segment_idx_];
-  const auto diff          = ac_match.text_start_pos - ac_match.pattern_index.start_pos;
-  auto next_literal_offset = 0;
-  if (!segment.IsLastLiteral(ac_match.pattern_index.start_pos)) {
-    next_literal_offset = segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos);
-  }
-
-  if (segment.IsFirstLiteral(ac_match.pattern_index.start_pos)) {
-    /**
-     * @brief Two scenarios:
-     * - With prefix percentage, the new 1st literal can start anywhere
-     * - Without prefix percentage, the new 1st literal must start exactly at the sket's first pos
-     *   Also, this scenario only happens for the 1st literal: the literal is the prefix of the text & pattern
-     */
-    if (segment.has_prefix_percent ||
-        (matcher.segment_idx_ == 0 && ac_match.text_start_pos == ac_match.pattern_index.start_pos)) {
-      // simply return true for last literal
-      if (segment.IsLastLiteral(ac_match.pattern_index.start_pos)) { return true; }
-      // otherwise, return the underscore count, which is used to determine the number of skipped code points
-      assert(next_literal_offset >= ac_match.pattern_index.start_pos + ac_match.literal_len);
-      auto underscore_cnt = next_literal_offset - ac_match.pattern_index.start_pos - ac_match.literal_len;
-      delay_queue.Schedule(ac_match.pattern_index.pattern_id, underscore_cnt + curr_cp_index, next_literal_offset,
-                           ac_match.pattern_index.start_pos);
-      return true;
-    }
-  } else if (matcher.Contain(diff)) {
-    // Otherwise, check if there is a previous literal that has the exact gap we are looking for
-    auto prev_pat_pos = matcher.GetAndRemove(diff);
-    if (segment.IsPreviousLiteral(prev_pat_pos, ac_match.pattern_index.start_pos)) {
-      // simply return true for last literal
-      if (segment.IsLastLiteral(ac_match.pattern_index.start_pos)) { return true; }
-      // otherwise, return the underscore count, which is used to determine the number of skipped code points
-      assert(next_literal_offset >= ac_match.pattern_index.start_pos + ac_match.literal_len);
-      auto underscore_cnt = next_literal_offset - ac_match.pattern_index.start_pos - ac_match.literal_len;
-      delay_queue.Schedule(ac_match.pattern_index.pattern_id, underscore_cnt + curr_cp_index, next_literal_offset,
-                           ac_match.pattern_index.start_pos);
-      return true;
-    }
-  }
-
-  return false;
+auto Skeleton::InitializeMatcher() -> Matcher {
+  assert(!seg_.empty());
+  return Matcher(seg_[0].max_underscore_cnt);
 }
 
 /**
@@ -155,10 +104,10 @@ auto Skeleton::TryMatchingLiteral(const MatchingOutputType &ac_match, Matcher &m
  * - Current segment is the last one, doesn't have a PERCENTAGE suffix, and the AhoCorasick matcher
  *    states that the current matching is the suffix of the queried text, including suffixed underscores
  */
-auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, const Matcher &matcher, const char *text,
+auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
                                 u64 text_length) -> bool {
-  const auto &segment  = seg_[matcher.segment_idx_];
-  auto next_sket_index = matcher.segment_idx_ + 1;
+  const auto &segment  = seg_[curr_segment_idx];
+  auto next_sket_index = curr_segment_idx + 1;
   if ((next_sket_index < seg_.size()) ||                                     // 1st scenario
       (next_sket_index >= seg_.size() && seg_.back().has_suffix_percent)) {  // 2nd scenario
     return true;
@@ -175,48 +124,72 @@ auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, const Matche
   return iterate_cur == text_length;
 }
 
-auto Skeleton::InitializeMatcher() -> Matcher {
-  assert(!seg_.empty());
-  return Matcher(seg_[0].max_underscore_cnt);
+// --------------------------------------------------------------------------------------------
+/**
+ * @brief Only match within the current considerate pattern. Two key conditions:
+ * - The being-matched pattern start position must be assocated with the being-matched skeleton segment
+ * - The start position in text must adhere to the positional constraint of the active skeleton matcher `instance`
+ */
+auto Matcher::MayMatch(const Skeleton &sket, const MatchingOutputType &ac_match) -> bool {
+  return segment_idx_ < sket.seg_.size() && sket[segment_idx_].Contain(ac_match.pattern_index.start_pos) &&
+         ac_match.text_start_pos >= min_text_start_pos_;
 }
 
-auto Skeleton::AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher) -> bool {
-  matcher.segment_idx_++;
-  matcher.min_text_start_pos_ = min_text_next_start_pos;
-  if (matcher.segment_idx_ < seg_.size()) {
-    auto &next_segment = seg_[matcher.segment_idx_];
-    matcher.match_     = LRUCache<u64, u16>(next_segment.max_underscore_cnt + 1);
+auto Matcher::TryMatchingLiteral(const Skeleton &sket, const MatchingOutputType &ac_match, u64 curr_cp_index,
+                                 DelayedMatchQueue &delay_queue) -> bool {
+  if (!MayMatch(sket, ac_match)) { return false; }
+  const auto &segment      = sket[segment_idx_];
+  const auto diff          = ac_match.text_start_pos - ac_match.pattern_index.start_pos;
+  auto next_literal_offset = 0;
+  if (!segment.IsLastLiteral(ac_match.pattern_index.start_pos)) {
+    next_literal_offset = segment.GetNextLiteralOffset(ac_match.pattern_index.start_pos);
+  }
+
+  if (segment.IsFirstLiteral(ac_match.pattern_index.start_pos)) {
+    /**
+     * @brief Two scenarios:
+     * - With prefix percentage, the new 1st literal can start anywhere
+     * - Without prefix percentage, the new 1st literal must start exactly at the sket's first pos
+     *   Also, this scenario only happens for the 1st literal: the literal is the prefix of the text & pattern
+     */
+    if (segment.has_prefix_percent ||
+        (segment_idx_ == 0 && ac_match.text_start_pos == ac_match.pattern_index.start_pos)) {
+      // simply return true for last literal
+      if (segment.IsLastLiteral(ac_match.pattern_index.start_pos)) { return true; }
+      // otherwise, return the underscore count, which is used to determine the number of skipped code points
+      assert(next_literal_offset >= ac_match.pattern_index.start_pos + ac_match.literal_len);
+      auto underscore_cnt = next_literal_offset - ac_match.pattern_index.start_pos - ac_match.literal_len;
+      delay_queue.Schedule(ac_match.pattern_index.pattern_id, underscore_cnt + curr_cp_index, next_literal_offset,
+                           ac_match.pattern_index.start_pos);
+      return true;
+    }
+  } else if (Contain(diff)) {
+    // Otherwise, check if there is a previous literal that has the exact gap we are looking for
+    auto prev_pat_pos = GetAndRemove(diff);
+    if (segment.IsPreviousLiteral(prev_pat_pos, ac_match.pattern_index.start_pos)) {
+      // simply return true for last literal
+      if (segment.IsLastLiteral(ac_match.pattern_index.start_pos)) { return true; }
+      // otherwise, return the underscore count, which is used to determine the number of skipped code points
+      assert(next_literal_offset >= ac_match.pattern_index.start_pos + ac_match.literal_len);
+      auto underscore_cnt = next_literal_offset - ac_match.pattern_index.start_pos - ac_match.literal_len;
+      delay_queue.Schedule(ac_match.pattern_index.pattern_id, underscore_cnt + curr_cp_index, next_literal_offset,
+                           ac_match.pattern_index.start_pos);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+auto Matcher::AdvanceNextSegment(const Skeleton &sket, u64 min_text_next_start_pos) -> bool {
+  segment_idx_++;
+  min_text_start_pos_ = min_text_next_start_pos;
+  if (segment_idx_ < sket.Size()) {
+    auto &next_segment = sket[segment_idx_];
+    match_             = LRUCache<u64, u16>(next_segment.max_underscore_cnt + 1);
     return true;
   }
   return false;
 }
-
-// --------------------------------------------------------------------------------------------
-auto Tokenizer::NextLiteral(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> TextUnit {
-  auto prev_pos = pos;
-  while (pos < slen && s[pos] == UNDERSCORE) { pos++; }
-  max_underscore_cnt = std::max(max_underscore_cnt, pos - prev_pos);
-  if (pos >= slen) {
-    // no more tokens; resetting pos back to suffix processing
-    pos = prev_pos;
-    return {WRONG_OFFSET, 0};
-  }
-  auto start = pos;
-  while (pos < slen && s[pos] != UNDERSCORE) { pos++; }
-  return {start, pos - start};
-};
-
-auto Tokenizer::NextSegment(const char *s, size_t slen, u32 &pos) -> TextUnit {
-  auto prev_pos = pos;
-  while (pos < slen && s[pos] == PERCENTAGE) { pos++; }
-  if (pos >= slen) {
-    // no more tokens; resetting pos back to suffix processing
-    pos = prev_pos;
-    return {WRONG_OFFSET, 0};
-  }
-  auto start = pos;
-  while (pos < slen && s[pos] != PERCENTAGE) { pos++; }
-  return {start, pos - start};
-};
 
 }  // namespace aho_corasick

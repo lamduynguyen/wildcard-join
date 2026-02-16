@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "aho_corasick/aho_corasick.h"
+#include "aho_corasick/parser.h"
 #include "common/perf_event.h"
 #include "kmp/kmp.h"
 
@@ -304,7 +304,8 @@ int main() {
       trie.BuildSuffixLink(num_threads);
       for (auto row_index = 0; row_index < data.size(); row_index++) {
         auto &row             = data[row_index];
-        auto per_row_matching = trie.ParseText(row.title.c_str(), row.title.size());
+        auto parser           = aho_corasick::TextParserIterator(row.title.c_str(), row.title.size(), &trie);
+        auto per_row_matching = parser.ParseText();
         for (auto &emit_pattern : per_row_matching) {
           trie_result[emit_pattern.pattern_index.pattern_id].insert(row_index);
         }

@@ -12,7 +12,7 @@ AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART::Tree>()) {}
 
 auto AhoCorasick::Local() -> ART::ThreadInfo { return trie_->getThreadInfo(); }
 
-auto AhoCorasick::GetRoot() -> ART::N * { return trie_->root; }
+auto AhoCorasick::GetRoot() const -> ART::N * { return trie_->root; }
 
 void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_auxIndex,
                          ART::ThreadInfo &t) {
@@ -134,22 +134,6 @@ void AhoCorasick::BuildSuffixLink(u16 number_of_threads) {
   }
 }
 
-auto AhoCorasick::ParseText(const char *text, size_t text_len) -> OutputEmitType {
-  /**
-   * Output link logic
-   * - In the original AhoCorasick, when following the suffix links, we meet an ART node whose has a NULL TERMINATOR
-   *    => this is an output link
-   * - In our implementation, we directly store all output links (the NULL TERMINATOR node) as the trie leaf
-   */
-  OutputEmitType result;
-  auto iterate = IterativeParseText(text, text_len, trie_->root);
-  while (iterate.CanAdvanceOneCodePoint()) {
-    auto next_set = ContinueParseText(iterate);
-    result.merge(next_set);
-  }
-  return result;
-}
-
 auto AhoCorasick::VisitCodePoint(ART::N *cur, const char *cp, u8 cp_len) -> ART::N * {
   assert(cur->isLastByteOfCodePoint());
   for (auto idx = 0U; idx < cp_len; idx++) {
@@ -159,63 +143,6 @@ auto AhoCorasick::VisitCodePoint(ART::N *cur, const char *cp, u8 cp_len) -> ART:
     cur = next;
   }
   return cur;
-}
-
-// The caller
-auto AhoCorasick::ContinueParseText(IterativeParseText &ite) -> OutputEmitType {
-  OutputEmitType result;
-
-  // Retrieve next code point
-  auto cp         = ite.text + ite.text_offset;
-  auto advance_cp = umbra::Utf8::readCodePoint(cp, ite.text + ite.text_len);
-  auto cp_len     = advance_cp.next - cp;
-
-  // Three cases:
-  //  1. If the next possible state is a nullptr, we go back to root
-  //  2. If the next possible state is a leaf (due to lazy expansive + end all keywords as NULL terminator),
-  //      we go back to root and output that pattern
-  //  3. Otherwise, move forward to that state
-  auto possible_next = VisitCodePoint(ite.ptr, cp, cp_len);
-  while (ite.ptr != trie_->root && possible_next == nullptr) {
-    ite.ptr       = ART::N::getSuffixLink(ite.ptr);
-    possible_next = VisitCodePoint(ite.ptr, cp, cp_len);
-  }
-  assert((possible_next != nullptr) || (ite.ptr == trie_->root));  // assertion for case #1
-  if (possible_next != nullptr) {
-    // case #2 & #3
-    ite.ptr = possible_next;
-    if (ite.ptr->isTerminalNode()) {
-      // case #2: matching for 2nd case
-      auto leaf = ART::N::getChild(NULL_TERMINATOR, possible_next);
-      AppendResult(ite, leaf, cp_len, result);
-    }
-  }
-  // Evaluate output links
-  auto output_link = ART::N::getOutputLink(ite.ptr);
-  while (output_link != nullptr) {
-    if (output_link->isTerminalNode()) {
-      auto leaf = ART::N::getChild(NULL_TERMINATOR, output_link);
-      AppendResult(ite, leaf, cp_len, result);
-    }
-    output_link = ART::N::getOutputLink(output_link);  // follow the suffix-link chain
-  }
-
-  // Advance next offset in the text for next processing
-  ite.text_offset += cp_len;
-  ite.iterator_idx++;
-  return result;
-}
-
-void AhoCorasick::AppendResult(const IterativeParseText &ite, ART::N *leaf, size_t cp_len, OutputEmitType &out_result) {
-  assert(ART::N::isLeaf(leaf));
-  auto keyword_id  = ART::N::getLeaf(leaf)->auxIndex;
-  auto literal_len = ART::N::getLeaf(leaf)->keyLenWithoutNullTerminator();
-  auto match_pos   = ite.text_offset - literal_len + cp_len;
-  auto &bitmap     = literal_map_[keyword_id];
-  for (auto value : bitmap) {
-    auto pattern_idx = PatternIndexType::FromUint(value);
-    out_result.emplace(pattern_idx, literal_len, match_pos);
-  }
 }
 
 }  // namespace aho_corasick

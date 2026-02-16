@@ -35,22 +35,23 @@ auto Skeleton::Segment::GetNextLiteralOffset(u16 start_pos) const -> u16 {
 }
 
 // --------------------------------------------------------------------------------------------
-Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Token &)> &literal_fn) : only_wildcard_(true) {
+Skeleton::Skeleton(const char *p, u64 plen, const std::function<void(Tokenizer::TextUnit &)> &literal_fn)
+    : only_wildcard_(true) {
   auto last_end_pos = 0U;
   while (true) {
     auto match = Segment();
 
     // Extract tokens by PERCENTAGE only
     auto prev_pos = last_end_pos;
-    auto tok      = Token::NextSegment(p, plen, last_end_pos);
-    if (tok.start == Token::WRONG_OFFSET) { break; }
+    auto tok      = Tokenizer::NextSegment(p, plen, last_end_pos);
+    if (tok.start == Tokenizer::WRONG_OFFSET) { break; }
     if (prev_pos < tok.start) { match.has_prefix_percent = true; };
 
     // Build between-PERCENTAGE skeleton based on the extracted token -- p[tok.start : last_end_pos]
     auto pos = tok.start;
     for (auto pos = tok.start; pos < tok.start + tok.len;) {
-      auto literal = Token::NextToken(p, tok.start + tok.len, pos, match.max_underscore_cnt);
-      if (literal.start == Token::WRONG_OFFSET) {
+      auto literal = Tokenizer::NextLiteral(p, tok.start + tok.len, pos, match.max_underscore_cnt);
+      if (literal.start == Tokenizer::WRONG_OFFSET) {
         // this means we have a suffix _ scenario
         match.suffix_underscore_cnt = last_end_pos - pos;
         break;
@@ -76,9 +77,9 @@ auto Skeleton::SpecialMatchEmptyPattern(const char *s, size_t slen, const char *
   auto underscore_cnt = 0UL;
   auto has_percent    = false;
   for (auto idx = 0UL; idx < plen; idx++) {
-    if (p[idx] == UNDERSCORE) {
+    if (p[idx] == Tokenizer::UNDERSCORE) {
       underscore_cnt++;
-    } else if (p[idx] == PERCENTAGE) {
+    } else if (p[idx] == Tokenizer::PERCENTAGE) {
       has_percent = true;
     }
   }
@@ -191,7 +192,7 @@ auto Skeleton::AdvanceNextSegment(u64 min_text_next_start_pos, Matcher &matcher)
 }
 
 // --------------------------------------------------------------------------------------------
-auto Token::NextToken(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> Token {
+auto Tokenizer::NextLiteral(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> TextUnit {
   auto prev_pos = pos;
   while (pos < slen && s[pos] == UNDERSCORE) { pos++; }
   max_underscore_cnt = std::max(max_underscore_cnt, pos - prev_pos);
@@ -205,7 +206,7 @@ auto Token::NextToken(const char *s, size_t slen, u32 &pos, u32 &max_underscore_
   return {start, pos - start};
 };
 
-auto Token::NextSegment(const char *s, size_t slen, u32 &pos) -> Token {
+auto Tokenizer::NextSegment(const char *s, size_t slen, u32 &pos) -> TextUnit {
   auto prev_pos = pos;
   while (pos < slen && s[pos] == PERCENTAGE) { pos++; }
   if (pos >= slen) {

@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+using aho_corasick::Tokenizer;
+
 bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
   size_t pidx = 0;
   size_t sidx = 0;
@@ -18,11 +20,11 @@ bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
     auto pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
     auto schar = umbra::Utf8::readCodePoint(&sdata[sidx], sdata + slen);
 
-    if (pchar.codePoint == aho_corasick::UNDERSCORE) {
+    if (pchar.codePoint == Tokenizer::UNDERSCORE) {
       pidx = pchar.next - pdata;
       sidx = schar.next - sdata;
-    } else if (pchar.codePoint == aho_corasick::PERCENTAGE) {
-      while (pidx < plen && pchar.codePoint == aho_corasick::PERCENTAGE) {
+    } else if (pchar.codePoint == Tokenizer::PERCENTAGE) {
+      while (pidx < plen && pchar.codePoint == Tokenizer::PERCENTAGE) {
         pidx  = pchar.next - pdata;
         pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
       }
@@ -41,7 +43,7 @@ bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
     }
   }
   auto pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
-  while (pidx < plen && pchar.codePoint == aho_corasick::PERCENTAGE) {
+  while (pidx < plen && pchar.codePoint == Tokenizer::PERCENTAGE) {
     pidx  = pchar.next - pdata;
     pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
   }
@@ -61,7 +63,7 @@ bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
       auto pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
 
       // Case 1: '_' matches exactly one Unicode codepoint
-      if (pchar.codePoint == aho_corasick::UNDERSCORE) {
+      if (pchar.codePoint == Tokenizer::UNDERSCORE) {
         auto schar = umbra::Utf8::readCodePoint(&sdata[sidx], sdata + slen);
         sidx       = schar.next - sdata;
         pidx       = pchar.next - pdata;
@@ -69,7 +71,7 @@ bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
       }
 
       // Case 2: exact Unicode codepoint match
-      if (pchar.codePoint != aho_corasick::PERCENTAGE) {
+      if (pchar.codePoint != Tokenizer::PERCENTAGE) {
         auto schar = umbra::Utf8::readCodePoint(&sdata[sidx], sdata + slen);
         if (pchar.codePoint == schar.codePoint) {
           sidx = schar.next - sdata;
@@ -79,7 +81,7 @@ bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
       }
 
       // Case 3: '%' wildcard
-      if (pchar.codePoint == aho_corasick::PERCENTAGE) {
+      if (pchar.codePoint == Tokenizer::PERCENTAGE) {
         star_pidx = pchar.next - pdata;  // pattern after %
         star_sidx = sidx;
         pidx      = star_pidx;
@@ -104,7 +106,7 @@ bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
   // Consume remaining '%' in pattern
   while (pidx < plen) {
     auto pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
-    if (pchar.codePoint != aho_corasick::PERCENTAGE) break;
+    if (pchar.codePoint != Tokenizer::PERCENTAGE) break;
     pidx = pchar.next - pdata;
   }
 
@@ -118,7 +120,7 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
 
   // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
   auto skeleton = aho_corasick::Skeleton(
-    p, plen, [&](aho_corasick::Token &tok) { trie.Insert(p + tok.start, tok.len, {0, tok.start}, t); });
+    p, plen, [&](Tokenizer::TextUnit &tok) { trie.Insert(p + tok.start, tok.len, {0, tok.start}, t); });
   if (skeleton.IsEmpty() || skeleton.OnlyWildcard()) {
     return aho_corasick::Skeleton::SpecialMatchEmptyPattern(s, slen, p, plen);
   }
@@ -164,59 +166,64 @@ bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen)
   return false;
 }
 
-// template <typename StringT>
-// auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT> patterns) -> std::vector<bool> {
-//   // Aho-Corasick env
-//   auto trie = aho_corasick::AhoCorasick();
-//   auto t    = trie.Local();
-//   std::vector<bool> result(patterns.size(), false);
+template <typename StringT>
+auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT> patterns) -> std::vector<bool> {
+  // Aho-Corasick env
+  auto trie = aho_corasick::AhoCorasick();
+  auto t    = trie.Local();
+  std::vector<bool> result(patterns.size(), false);
 
-//   // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
-//   std::vector<aho_corasick::Skeleton> skeleton;
-//   std::vector<aho_corasick::Skeleton::Matcher> instance;
-//   for (auto idx = 0U; idx < patterns.size(); idx++) {
-//     auto &pat = patterns[idx];
-//     skeleton.emplace_back(reinterpret_cast<char *>(pat.data()), pat.size(), [&](aho_corasick::Token &tok) {
-//       trie.Insert(reinterpret_cast<char *>(pat.data()) + tok.start, tok.len, {idx, tok.start}, t);
-//     });
-//     if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
-//       result[idx] =
-//         aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, reinterpret_cast<char *>(pat.data()), pat.size());
-//       instance.emplace_back(0);
-//     } else {
-//       instance.push_back(skeleton.back().InitializeMatcher());
-//     }
-//   }
+  // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
+  std::vector<aho_corasick::Skeleton> skeleton;
+  std::vector<aho_corasick::Matcher> instances;
+  for (auto idx = 0U; idx < patterns.size(); idx++) {
+    auto &pat = patterns[idx];
+    skeleton.emplace_back(reinterpret_cast<char *>(pat.data()), pat.size(), [&](Tokenizer::TextUnit &tok) {
+      trie.Insert(reinterpret_cast<char *>(pat.data()) + tok.start, tok.len, {idx, tok.start}, t);
+    });
+    if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
+      result[idx] =
+        aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, reinterpret_cast<char *>(pat.data()), pat.size());
+      instances.emplace_back(0);
+    } else {
+      instances.push_back(skeleton.back().InitializeMatcher());
+    }
+  }
 
-//   // Building suffix & output links
-//   trie.BuildSuffixLink(1);
+  // Building suffix & output links
+  trie.BuildSuffixLink(1);
 
-//   auto iterate = aho_corasick::AhoCorasick::IterativeParseText(s, slen, trie.GetRoot());
-//   for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
-//     auto ac_matchers = trie.ContinueParseText(iterate);
+  // Start matching multiple patterns
+  aho_corasick::DelayedMatchQueue queue;
+  auto iterate = aho_corasick::AhoCorasick::IterativeParseText(s, slen, trie.GetRoot());
+  for (auto end_offset = 0UL; end_offset < slen; end_offset++) {
+    auto ac_matchers = trie.ContinueParseText(iterate);
 
-//     for (auto &match : ac_matchers) {
-//       auto pat_id   = match.pattern_index.pattern_id;
-//       auto &segment    = skeleton[pat_id];
-//       auto &matcher = instance[pat_id];
+    for (auto &match : ac_matchers) {
+      auto pat_id   = match.pattern_index.pattern_id;
+      auto &sket    = skeleton[pat_id];
+      auto &matcher = instances[pat_id];
+      auto &segment = sket[matcher.CurrentSegmentIdx()];
 
-//       if (!result[pat_id] && segment.MayMatch(match, matcher)) {
-//         auto success = segment.TryMatchingLiteral(match, matcher);
+      // 1st. Check the possible matched literals
+      if (!result[pat_id] && sket.TryMatchingLiteral(match, matcher, iterate.iterator_idx, queue)) {
+        // Now, check if we just insert the last match of the segment
+        if (segment.IsLastLiteral(match.pattern_index.start_pos) && sket.ValidLastLiteral(match, matcher, s, slen) &&
+            !sket.AdvanceNextSegment(end_offset + segment.suffix_underscore_cnt + 1, matcher)) {
+          result[pat_id] = true;
+        }
+      }
 
-//         if (success) {
-//           // Now, check if we just insert the last match of the segment
-//           if (segment[matcher.CurrentSegmentIdx()].IsLastLiteral(match.pattern_index.start_pos) &&
-//               segment.ValidLastLiteral(match, matcher, s, slen)) {
-//             if (!segment.AdvanceNextSegment(end_offset + segment[matcher.CurrentSegmentIdx()].suffix_underscore_cnt +
-//             1,
-//                                          matcher)) {
-//               result[pat_id] = true;
-//             }
-//           }
-//         }
-//       }
-//     }
-//   }
+      // 2nd. Check the queue to proceed with the delayed matching
+      while (queue.FrontReady(iterate.iterator_idx)) {
+        const auto &item = queue.Front();
+        fmt::println("Insert matching: [diff: {}, next_start_pos: {}, prev_start_pos: {}]",
+                     iterate.text_offset - item.next_pattern_pos, item.next_pattern_pos, item.prev_pattern_pos);
+        matcher.Upsert(iterate.text_offset - item.next_pattern_pos, item.prev_pattern_pos);
+        queue.Pop();
+      }
+    }
+  }
 
-//   return result;
-// }
+  return result;
+}

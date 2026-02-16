@@ -15,18 +15,18 @@
 
 namespace aho_corasick {
 
-static constexpr auto PERCENTAGE = '%';
-static constexpr auto UNDERSCORE = '_';
-
-struct Token {
+struct Tokenizer {
   static constexpr u32 WRONG_OFFSET = -1U;
-  u32 start;  // offset in the original string
-  u32 len;
+  static constexpr auto PERCENTAGE  = '%';
+  static constexpr auto UNDERSCORE  = '_';
 
-  static inline auto IsDelim(char c) { return c == UNDERSCORE || c == PERCENTAGE; };
+  struct TextUnit {
+    u32 start;
+    u32 len;
+  };
 
-  static auto NextToken(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> Token;
-  static auto NextSegment(const char *s, size_t slen, u32 &pos) -> Token;
+  static auto NextLiteral(const char *s, size_t slen, u32 &pos, u32 &max_underscore_cnt) -> TextUnit;
+  static auto NextSegment(const char *s, size_t slen, u32 &pos) -> TextUnit;
 };
 
 /**
@@ -169,7 +169,7 @@ class Skeleton {
     auto GetNextLiteralOffset(u16 start_pos) const -> u16;
   };
 
-  Skeleton(const char *p, size_t plen, const std::function<void(Token &)> &literal_fn);
+  Skeleton(const char *p, size_t plen, const std::function<void(Tokenizer::TextUnit &)> &literal_fn);
   ~Skeleton() = default;
 
   /* Skeleton segment (i.e., structure) utilities */

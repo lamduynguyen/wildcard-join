@@ -159,26 +159,17 @@ TEST(TestMatchingASCII, All) {
     EXPECT_EQ(try_pat, result);
   }
 
-  // AhoCorasick matching
-  for (auto &[pat, result] : tests) {
-    auto try_pat = AhoCorasickMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
-    if (try_pat != result) {
-      std::cout << "AhoCorasick: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
-    }
-    EXPECT_EQ(try_pat, result);
-  }
-
   // Transform the tests into two vector for multi-pattern matching
-  // std::vector<std::string> patterns;
-  // std::transform(tests.begin(), tests.end(), std::back_inserter(patterns), [](const auto &p) { return p.first; });
-  // auto results = AhoCorasickMultiplePatterns(text.c_str(), text.size(), patterns);
-  // for (auto idx = 0UL; idx < tests.size(); idx++) {
-  //   auto &[pat, result] = tests[idx];
-  //   if (results[idx] != result) {
-  //     std::cout << "AhoCorasick Multi matching: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
-  //   }
-  //   EXPECT_EQ(results[idx], result);
-  // }
+  std::vector<std::string> patterns;
+  std::transform(tests.begin(), tests.end(), std::back_inserter(patterns), [](const auto &p) { return p.first; });
+  auto results = AhoCorasickMultiplePatterns(text.c_str(), text.size(), patterns);
+  for (auto idx = 0UL; idx < tests.size(); idx++) {
+    auto &[pat, result] = tests[idx];
+    if (results[idx] != result) {
+      std::cout << "AhoCorasick Multi matching: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
+    }
+    EXPECT_EQ(results[idx], result);
+  }
 }
 
 auto main(int argc, char **argv) -> int {

@@ -92,7 +92,7 @@ auto Skeleton::SpecialMatchEmptyPattern(const char *s, size_t slen, const char *
   return (no_cp == underscore_cnt) || (no_cp > underscore_cnt && has_percent);
 }
 
-auto Skeleton::InitializeMatcher() -> Matcher {
+auto Skeleton::InitializeMatcher() const -> Matcher {
   assert(!seg_.empty());
   return Matcher(seg_[0].max_underscore_cnt);
 }
@@ -105,7 +105,7 @@ auto Skeleton::InitializeMatcher() -> Matcher {
  *    states that the current matching is the suffix of the queried text, including suffixed underscores
  */
 auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
-                                u64 text_length) -> bool {
+                                const u64 text_length) const -> bool {
   const auto &segment  = seg_[curr_segment_idx];
   auto next_sket_index = curr_segment_idx + 1;
   if ((next_sket_index < seg_.size()) ||                                     // 1st scenario

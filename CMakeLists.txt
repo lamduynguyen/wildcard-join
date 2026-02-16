@@ -39,12 +39,6 @@ target_link_libraries(ahocorasick PUBLIC succinct fmt croaring tbb)
 target_include_directories(ahocorasick PUBLIC aho_corasick/include)
 
 # ---------------------------------------------------------------------------
-# Main binary
-# ---------------------------------------------------------------------------
-add_executable(prototype main.cc)
-target_link_libraries(prototype ahocorasick)
-
-# ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
 option(ENABLE_TESTING "Build tests" OFF)
@@ -64,7 +58,5 @@ endif()
 file(GLOB_RECURSE TEST_FILES test/**.cc test/**.h)
 add_custom_target(
   format clang-format --verbose -style=file:${CMAKE_CURRENT_SOURCE_DIR}/.clang-format -i
-         ${CMAKE_CURRENT_SOURCE_DIR}/main.cc
-         ${CMAKE_CURRENT_SOURCE_DIR}/join_strings.h
          ${SOURCE_FILES}
          ${TEST_FILES})

@@ -114,118 +114,46 @@ bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
   return pidx == plen;
 }
 
-bool AhoCorasickMatching(const char *s, size_t slen, const char *p, size_t plen) {
-  // Aho-Corasick env
-  auto trie = aho_corasick::AhoCorasick();
-  auto t    = trie.Local();
-
-  // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
-  auto skeleton = aho_corasick::Skeleton(
-    p, plen, [&](Tokenizer::TextUnit &tok) { trie.Insert(p + tok.start, tok.len, {0, tok.start}, t); });
-  if (skeleton.IsEmpty() || skeleton.OnlyWildcard()) {
-    return aho_corasick::Skeleton::SpecialMatchEmptyPattern(s, slen, p, plen);
-  }
-
-  // Building suffix & output links
-  trie.BuildSuffixLink(1);
-
-  // Start matching text
-  auto instance = skeleton.InitializeMatcher();
-  aho_corasick::DelayedMatchQueue queue;
-  auto iterator = aho_corasick::TextParserIterator(s, slen, &trie);
-  while (iterator.CanAdvanceOneCodePoint()) {
-    auto end_offset  = iterator.text_offset;
-    auto ac_matchers = iterator.ContinueParseText();
-    assert(iterator.text_offset > end_offset);  // must advance cursor
-
-    // 1st. Check the possible matched literals
-    auto &segment = skeleton[instance.CurrentSegmentIdx()];
-    for (auto &match : ac_matchers) {
-      // Try matching the AC literal into the skeleton
-      if (instance.TryMatchingLiteral(skeleton, match, iterator.codepoint_idx, queue)) {
-        // OK. Now, check if we have justed match the last literal of the skeleton
-        if (segment.IsLastLiteral(match.pattern_index.start_pos)) {
-          // If the last `match` helps satisfy the whole skeleton, then we find a match
-          if (skeleton.ValidLastLiteral(match, instance.CurrentSegmentIdx(), s, slen) &&
-              !instance.AdvanceNextSegment(skeleton, end_offset + segment.suffix_underscore_cnt + 1)) {
-            return true;
-          }
-        }
-      }
-    }
-
-    // 2nd. Check the queue to proceed with the delayed matching
-    while (queue.FrontReady(iterator.codepoint_idx)) {
-      const auto &item = queue.Front();
-      fmt::println("Insert matching: [diff: {}, next_start_pos: {}, prev_start_pos: {}]",
-                   iterator.text_offset - item.next_pattern_pos, item.next_pattern_pos, item.prev_pattern_pos);
-      instance.Upsert(iterator.text_offset - item.next_pattern_pos, item.prev_pattern_pos);
-      queue.Pop();
-    }
-  }
-  return false;
-}
-
 template <typename StringT>
 auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT> patterns) -> std::vector<bool> {
-  // Aho-Corasick env
+  // #1. Aho-Corasick env. Trie must be global scope
   auto trie = aho_corasick::AhoCorasick();
   auto t    = trie.Local();
+
+  // #2. Pre-processing the pattern into pattern skeleton.
+  // With morsel-driven processing, we can split the pattern table into multiple morsels,
+  //   then build the associated pattern skeleton.
+  // Afterwards, combining all those skeletons into a single global `build_side`.
+  // For prototyping, just a single constructor for both steps.
+  auto build_side = aho_corasick::PatternAnalyzer(patterns, trie);
+
+  // #3. All morsels must be completed until here.
+  // Building suffix & output links of the global AhoCorasick automaton
+  trie.BuildSuffixLink(1);
+
+  // #4. Start from now on, per-text matching
+  // Result bitmap declared
   std::vector<bool> result(patterns.size(), false);
 
-  // Pre-processing the pattern into pattern skeleton, then insert the split literals into AhoCorasick's trie
-  std::vector<aho_corasick::Skeleton> skeleton;
-  std::vector<aho_corasick::Matcher> instances;
+  // #5. Early filtering those patterns
   for (auto idx = 0U; idx < patterns.size(); idx++) {
-    auto &pat = patterns[idx];
-    skeleton.emplace_back(reinterpret_cast<char *>(pat.data()), pat.size(), [&](Tokenizer::TextUnit &tok) {
-      trie.Insert(reinterpret_cast<char *>(pat.data()) + tok.start, tok.len, {idx, tok.start}, t);
-    });
-    if (skeleton.back().IsEmpty() || skeleton.back().OnlyWildcard()) {
+    const auto &sket = build_side.Skeleton(idx);
+    // Special pattern: only containing wildcard characters
+    if (sket.IsEmpty() || sket.OnlyWildcard()) {
+      auto &pat = patterns[idx];
       result[idx] =
-        aho_corasick::Skeleton::SpecialMatchEmptyPattern(slen, reinterpret_cast<char *>(pat.data()), pat.size());
-      instances.emplace_back(0);
-    } else {
-      instances.push_back(skeleton.back().InitializeMatcher());
+        aho_corasick::Skeleton::SpecialMatchEmptyPattern(s, slen, reinterpret_cast<char *>(pat.data()), pat.size());
     }
   }
 
-  // Building suffix & output links
-  trie.BuildSuffixLink(1);
-
-  // Start matching multiple patterns
-  aho_corasick::DelayedMatchQueue queue;
-  auto iterator = aho_corasick::TextParserIterator(s, slen, &trie);
+  // #6. Matching rows with the AhoCorasick automaton
+  auto iterator = aho_corasick::TextParserIterator(s, slen, &build_side, &trie);
   while (iterator.CanAdvanceOneCodePoint()) {
-    auto end_offset  = iterator.text_offset;
-    auto ac_matchers = iterator.ContinueParseText();
+    // #6.1. Check the possible matched literals
+    iterator.IterateOneCodePoint(result);
 
-    for (auto &match : ac_matchers) {
-      auto pat_id   = match.pattern_index.pattern_id;
-      auto &sket    = skeleton[pat_id];
-      auto &matcher = instances[pat_id];
-      auto &segment = sket[matcher.CurrentSegmentIdx()];
-
-      // 1st. Check the possible matched literals
-      if (!result[pat_id] && matcher.TryMatchingLiteral(sket, match, iterator.codepoint_idx, queue)) {
-        // Now, check if we just insert the last match of the segment
-        if (segment.IsLastLiteral(match.pattern_index.start_pos) &&
-            sket.ValidLastLiteral(match, matcher.CurrentSegmentIdx(), s, slen) &&
-            !matcher.AdvanceNextSegment(sket, end_offset + segment.suffix_underscore_cnt + 1)) {
-          result[pat_id] = true;
-        }
-      }
-    }
-
-    // 2nd. Check the queue to proceed with the delayed matching
-    while (queue.FrontReady(iterator.codepoint_idx)) {
-      const auto &item = queue.Front();
-      auto &matcher    = instances[item.pattern_id];
-      fmt::println("Insert matching: [diff: {}, next_start_pos: {}, prev_start_pos: {}]",
-                   iterator.text_offset - item.next_pattern_pos, item.next_pattern_pos, item.prev_pattern_pos);
-      matcher.Upsert(iterator.text_offset - item.next_pattern_pos, item.prev_pattern_pos);
-      queue.Pop();
-    }
+    // #6.2. Check the queue to proceed with the delayed matching
+    iterator.ProcessDelayedMatching();
   }
 
   return result;

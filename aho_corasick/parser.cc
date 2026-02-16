@@ -17,6 +17,29 @@ auto TextParserIterator::ParseText() -> OutputEmitType {
   return result;
 }
 
+template <typename BitMap>
+void TextParserIterator::IterateOneCodePoint(BitMap &result) {
+  auto end_offset  = text_offset;
+  auto ac_matchers = ContinueParseText();
+
+  for (auto &match : ac_matchers) {
+    auto pat_id   = match.pattern_index.pattern_id;
+    auto &sket    = build_side->Skeleton(pat_id);
+    auto &matcher = instances[pat_id];
+    auto &segment = sket[matcher.CurrentSegmentIdx()];
+
+    // #4.1. Check the possible matched literals
+    if (!result[pat_id] && matcher.TryMatchingLiteral(sket, match, codepoint_idx, queue)) {
+      // Now, check if we just insert the last match of the segment
+      if (segment.IsLastLiteral(match.pattern_index.start_pos) &&
+          sket.ValidLastLiteral(match, matcher.CurrentSegmentIdx(), text, text_len) &&
+          !matcher.AdvanceNextSegment(sket, end_offset + segment.suffix_underscore_cnt + 1)) {
+        result[pat_id] = true;
+      }
+    }
+  }
+}
+
 // The caller
 auto TextParserIterator::ContinueParseText() -> OutputEmitType {
   OutputEmitType result;
@@ -75,5 +98,18 @@ void TextParserIterator::AppendResult(ART::N *leaf, size_t cp_len, OutputEmitTyp
     out_result.emplace(pattern_idx, literal_len, match_pos);
   }
 }
+
+void TextParserIterator::ProcessDelayedMatching() {
+  while (queue.FrontReady(codepoint_idx)) {
+    const auto &item = queue.Front();
+    auto &matcher    = instances[item.pattern_id];
+    fmt::println("Insert matching: [diff: {}, next_start_pos: {}, prev_start_pos: {}]",
+                 text_offset - item.next_pattern_pos, item.next_pattern_pos, item.prev_pattern_pos);
+    matcher.Upsert(text_offset - item.next_pattern_pos, item.prev_pattern_pos);
+    queue.Pop();
+  }
+}
+
+template void TextParserIterator::IterateOneCodePoint<std::vector<bool>>(std::vector<bool> &);
 
 }  // namespace aho_corasick

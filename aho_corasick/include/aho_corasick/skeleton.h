@@ -92,7 +92,7 @@ class Skeleton {
 
   inline auto operator[](u64 idx) const -> const Segment & { return seg_[idx]; }
 
-  inline auto IsEmpty() -> bool { return seg_.empty(); }
+  inline auto IsEmpty() const -> bool { return seg_.empty(); }
 
   inline auto Size() const { return seg_.size(); }
 
@@ -101,9 +101,9 @@ class Skeleton {
   static auto SpecialMatchEmptyPattern(const char *s, size_t slen, const char *p, size_t plen) -> bool;
 
   /* Skeleton utilities */
-  auto InitializeMatcher() -> Matcher;
-  auto ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text, u64 text_length)
-    -> bool;
+  auto InitializeMatcher() const -> Matcher;
+  auto ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
+                        const u64 text_length) const -> bool;
 
  private:
   friend class Matcher;

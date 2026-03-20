@@ -207,7 +207,7 @@ struct Leaf {
   }
 
   // key stored in Leaf always contain '\0'
-  inline auto keyLenWithoutNullTerminator() { return keyLen - 1; }
+  inline auto keyLenWithoutNullTerminator() const { return keyLen - 1; }
 
   inline const uint8_t &operator[](std::size_t i) const {
     assert(i < keyLen);

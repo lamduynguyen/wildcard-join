@@ -1,6 +1,5 @@
 #pragma once
 
-#include "art/epoche.h"
 #include "art/tree.h"
 #include "common/typedef.h"
 #include "common/util.h"
@@ -80,13 +79,12 @@ class AhoCorasick {
   ~AhoCorasick() = default;
 
   // Misc
-  auto Local() -> ART::ThreadInfo;
-  auto GetRoot() const -> ART::N *;
+  auto GetRoot() const -> ART::N256 *;
 
   // Main APIs
-  static auto VisitCodePoint(ART::N *cur, const char *cp, u8 cp_len) -> ART::N *;
-  void Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_aux_index, ART::ThreadInfo &t);
-  void BuildSuffixLink(u16 number_of_threads);
+  static auto VisitCodePoint(ART::N256 *cur, const char *cp, u8 cp_len) -> ART::N256 *;
+  void Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_aux_index);
+  void BuildSuffixLink();
 
  private:
   friend class TextParserIterator;
@@ -105,8 +103,8 @@ class AhoCorasick {
    * Note: If `node` represents the end of a code point, then `node == last_codepoint_node`.
    */
   struct BFSNodeItem {
-    ART::N *node;                                /// Current BFS node
-    ART::N *last_codepoint_node;                 /// Closest ancestor node ending a code point
+    ART::N256 *node;                             /// Current BFS node
+    ART::N256 *last_codepoint_node;              /// Closest ancestor node ending a code point
     std::array<uint8_t, 6> bytes_since_last_cp;  /// Bytes from last_codepoint_node to this node
     uint8_t length;  /// TODO: Only used if we want to parallelize the Suffix link construction
   };

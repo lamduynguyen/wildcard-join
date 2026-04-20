@@ -120,7 +120,6 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT
   -> std::vector<bool> {
   // #1. Aho-Corasick env. Trie must be global scope
   auto trie = aho_corasick::AhoCorasick();
-  auto t    = trie.Local();
 
   // #2. Pre-processing the pattern into pattern skeleton.
   // With morsel-driven processing, we can split the pattern table into multiple morsels,
@@ -131,7 +130,7 @@ auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT
 
   // #3. All morsels must be completed until here.
   // Building suffix & output links of the global AhoCorasick automaton
-  trie.BuildSuffixLink(1);
+  trie.BuildSuffixLink();
 
   // #4. Start from now on, per-text matching
   // Result bitmap declared

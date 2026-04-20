@@ -13,8 +13,8 @@
     for (auto idx = 0UL; idx < tests.size(); idx++) {                                                                \
       auto &[pat, result] = tests[idx];                                                                              \
       if (results[idx] != result) {                                                                                  \
-        fmt::println("AhoCorasick Multi matching: evaluate pattern '{}' return wrong result",                        \
-                     reinterpret_cast<const char *>(pat.data()));                                                    \
+        fmt::print("AhoCorasick Multi matching: evaluate pattern '{}' return wrong result\n",                        \
+                   reinterpret_cast<const char *>(pat.data()));                                                      \
       }                                                                                                              \
       EXPECT_EQ(results[idx], result);                                                                               \
     }                                                                                                                \
@@ -306,7 +306,7 @@ TEST(TestMatching, BasicUnicode) {
     auto try_pat = DuckDBMatching(reinterpret_cast<char *>(text.data()), text.size(),
                                   reinterpret_cast<char *>(pat.data()), pat.size());
     if (try_pat != result) {
-      fmt::println("DuckDB: evaluate pattern '{}' return wrong result", reinterpret_cast<const char *>(pat.data()));
+      fmt::print("DuckDB: evaluate pattern '{}' return wrong result\n", reinterpret_cast<const char *>(pat.data()));
     }
     EXPECT_EQ(try_pat, result);
   }
@@ -316,7 +316,7 @@ TEST(TestMatching, BasicUnicode) {
     auto try_pat = GreedyMatching(reinterpret_cast<char *>(text.data()), text.size(),
                                   reinterpret_cast<char *>(pat.data()), pat.size());
     if (try_pat != result) {
-      fmt::println("Greedy: evaluate pattern '{}' return wrong result", reinterpret_cast<const char *>(pat.data()));
+      fmt::print("Greedy: evaluate pattern '{}' return wrong result\n", reinterpret_cast<const char *>(pat.data()));
     }
     EXPECT_EQ(try_pat, result);
   }

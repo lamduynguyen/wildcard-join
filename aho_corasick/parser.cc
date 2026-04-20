@@ -57,7 +57,7 @@ auto TextParserIterator::ContinueParseText() -> OutputEmitType {
   //   3. Transition leads to an internal node → move forward
   auto next = AhoCorasick::VisitCodePoint(ptr, cp, cp_len);
   while (ptr != automaton->GetRoot() && next == nullptr) {
-    ptr  = ART::N::getSuffixLink(ptr);
+    ptr  = ptr->getSuffixLink();
     next = AhoCorasick::VisitCodePoint(ptr, cp, cp_len);
   }
   assert(next != nullptr || ptr == automaton->GetRoot());
@@ -65,15 +65,15 @@ auto TextParserIterator::ContinueParseText() -> OutputEmitType {
   if (next != nullptr) {
     ptr = next;
     if (ptr->isTerminalNode()) {
-      auto leaf = ART::N::getChild(NULL_TERMINATOR, ptr);
+      auto leaf = ptr->getChild(NULL_TERMINATOR);
       AppendResult(leaf, cp_len, result);
     }
   }
 
   // Follow output-link chain to collect all patterns that end here
-  for (auto *out = ART::N::getOutputLink(ptr); out != nullptr; out = ART::N::getOutputLink(out)) {
+  for (auto out = ptr->getOutputLink(); out != nullptr; out = out->getOutputLink()) {
     if (out->isTerminalNode()) {
-      auto leaf = ART::N::getChild(NULL_TERMINATOR, out);
+      auto leaf = out->getChild(NULL_TERMINATOR);
       AppendResult(leaf, cp_len, result);
     }
   }
@@ -83,9 +83,9 @@ auto TextParserIterator::ContinueParseText() -> OutputEmitType {
   return result;
 }
 
-void TextParserIterator::AppendResult(ART::N *leaf, size_t cp_len, OutputEmitType &out_result) const {
-  assert(ART::N::isLeaf(leaf));
-  const auto *node       = ART::N::getLeaf(leaf);
+void TextParserIterator::AppendResult(ART::N256 *leaf, size_t cp_len, OutputEmitType &out_result) const {
+  assert(ART::N256::isLeaf(leaf));
+  const auto *node       = ART::N256::getLeaf(leaf);
   const auto keyword_id  = node->auxIndex;
   const auto literal_len = node->keyLenWithoutNullTerminator();
   const auto match_pos   = text_offset - literal_len + cp_len;

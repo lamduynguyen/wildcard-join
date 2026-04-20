@@ -25,7 +25,6 @@ class PatternAnalyzer {
              std::convertible_to<std::ranges::range_value_t<Range>, std::u8string_view>)
   PatternAnalyzer(Range &&patterns, std::string_view escape_str, AhoCorasick &trie) {
     skeleton_.reserve(std::ranges::size(patterns));
-    auto t = trie.Local();
     for (auto idx = 0U; idx < patterns.size(); idx++) {
       auto &pat  = patterns[idx];
       auto *data = reinterpret_cast<char *>(pat.data());
@@ -33,7 +32,7 @@ class PatternAnalyzer {
                              [&](Tokenizer &tok, const LiteralSpan &lit) {
                                char buf[lit.len + 1]{};
                                auto sv = tok.StripEscapes(lit, buf);
-                               trie.Insert(sv.data(), sv.size(), {idx, lit.start - lit.escape_prefix_before_start}, t);
+                               trie.Insert(sv.data(), sv.size(), {idx, lit.start - lit.escape_prefix_before_start});
                              });
     }
   }
@@ -107,7 +106,7 @@ struct TextParserIterator {
   const PatternAnalyzer *build_side;  // compiled pattern skeletons (read-only)
   size_t text_offset;                 // current byte offset within text
   size_t codepoint_idx;               // current code-point index within text
-  ART::N *ptr;                        // current AhoCorasick automaton node
+  ART::N256 *ptr;                     // current AhoCorasick automaton node
   DelayedMatchQueue queue;            // deferred underscore-to-codepoint matching
   std::vector<Matcher> instances;     // per-pattern matcher state
 
@@ -118,7 +117,7 @@ struct TextParserIterator {
    */
   auto ContinueParseText() -> OutputEmitType;
 
-  void AppendResult(ART::N *leaf, size_t cp_len, OutputEmitType &out_result) const;
+  void AppendResult(ART::N256 *leaf, size_t cp_len, OutputEmitType &out_result) const;
 };
 
 }  // namespace aho_corasick

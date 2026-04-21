@@ -30,8 +30,8 @@ class PatternAnalyzer {
       auto *data = reinterpret_cast<char *>(pat.data());
       skeleton_.emplace_back(data, static_cast<u32>(pat.size()), escape_str,
                              [&](Tokenizer &tok, const LiteralSpan &lit) {
-                               char buf[lit.len + 1]{};
-                               auto sv = tok.StripEscapes(lit, buf);
+                               std::vector<char> buf(lit.len + 1, '\0');
+                               auto sv = tok.StripEscapes(lit, buf.data());
                                trie.Insert(sv.data(), sv.size(), {idx, lit.start - lit.escape_prefix_before_start});
                              });
     }

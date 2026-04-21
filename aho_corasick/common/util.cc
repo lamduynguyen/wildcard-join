@@ -118,27 +118,6 @@ auto NextUtf8Char(const std::u8string &s, std::size_t &i) -> c32 {
   throw std::runtime_error("Invalid UTF-8 character");
 }
 
-auto SIMDstrstr(const char *s, size_t n, const char *needle, size_t k) -> u64 {
-  const __m256i first = _mm256_set1_epi8(needle[0]);
-  const __m256i last  = _mm256_set1_epi8(needle[k - 1]);
-
-  for (size_t i = 0; i < n; i += 32) {
-    const __m256i block_first = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s + i));
-    const __m256i block_last  = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s + i + k - 1));
-    const __m256i eq_first    = _mm256_cmpeq_epi8(first, block_first);
-    const __m256i eq_last     = _mm256_cmpeq_epi8(last, block_last);
-    uint32_t mask             = _mm256_movemask_epi8(_mm256_and_si256(eq_first, eq_last));
-
-    while (mask != 0) {
-      const auto bitpos = GetFirstBitSet(mask);
-      if (memcmp(s + i + bitpos + 1, needle + 1, k - 2) == 0) { return i + bitpos; }
-      mask = ClearLeftmostSet(mask);
-    }
-  }
-
-  return std::string::npos;
-}
-
 /**
  * @brief Get order-preserving head of key (assuming little-endian)
  */

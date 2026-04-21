@@ -5,9 +5,10 @@ project(StringPrototype VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23) # Compile as C++23
 set(CMAKE_CXX_STANDARD_REQUIRED ON) # Require C++23 support
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
-set(CMAKE_CXX_FLAGS
-    "${CMAKE_C_FLAGS} -fPIC -Wno-stringop-overflow -fasynchronous-unwind-tables -march=native"
-)
+set(CMAKE_CXX_FLAGS"${CMAKE_C_FLAGS} -fPIC -fasynchronous-unwind-tables -march=native")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  add_compile_options(-Wno-stringop-overflow)
+endif()
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -O0 -g")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # For clang-tidy.

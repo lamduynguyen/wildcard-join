@@ -1,7 +1,6 @@
 #ifndef ART_OPTIMISTICLOCK_COUPLING_N_H
 #define ART_OPTIMISTICLOCK_COUPLING_N_H
 
-#include <algorithm>
 #include <cassert>
 #include <functional>
 #include <ranges>
@@ -22,14 +21,12 @@ class Tree {
   N256 *const root;
 
   inline void yield(int count) const {
-    if (count > 3)
-      sched_yield();
-    else
-      asm volatile("pause");
+    if (count > 3) sched_yield();
+    else           asm volatile("pause");
   }
 
-  inline auto getNextChar(const char *keyword, uint64_t keywordLen, bool mustAppendNull, uint64_t index) {
-    return (index >= keywordLen) ? (assert(mustAppendNull), NULL_TERMINATOR) : keyword[index];
+  inline uint8_t getNextChar(const char *keyword, uint64_t keywordLen, bool mustAppendNull, uint64_t index) {
+    return (index >= keywordLen) ? (assert(mustAppendNull), NULL_TERMINATOR) : static_cast<uint8_t>(keyword[index]);
   }
 
  public:
@@ -47,27 +44,17 @@ class Tree {
               UpsertFn &&upsert_fn) {
     assert(keywordLen > 0 && ((keyword[keywordLen - 1] == NULL_TERMINATOR) == !mustAppendNull));
 
-    // -----------------------------
-    // Step 1: Build isEndCodePoint array
-    // IMPORTANT: the index of this array should correspond to the trie's level
-    // That is, the level of the trie's root is 0, which corresponds to an empty string
-    // For a literal of `abc` to be inserted into the trie, the levels of corresponding bytes are:
-    //  (a = 1), (b = 2), (c = 3)
-    // That's why we use `isEndCodePoint[b - keyword + 1] = false` rather than `isEndCodePoint[b - keyword] = false`
-    // -----------------------------
+    // Build isEndCodePoint array so intermediate nodes of multi-byte UTF-8
+    // code points are labelled correctly during new-path insertion.
+    // Index corresponds to trie level: root = 0, first byte of keyword = level 1.
     std::vector<bool> isEndCodePoint(keywordLen + mustAppendNull + 1, true);
     const char *end = keyword + keywordLen + mustAppendNull;
     for (auto ptr = keyword; ptr < end;) {
-      auto result         = umbra::Utf8::readCodePoint(ptr, end);
-      const char *nextPtr = result.next;
-      // All bytes except the last are not end of code point
-      for (const char *b = ptr; b < nextPtr - 1; ++b) { isEndCodePoint[b - keyword + 1] = false; }
-      ptr = nextPtr;
+      auto result = umbra::Utf8::readCodePoint(ptr, end);
+      for (const char *b = ptr; b < result.next - 1; ++b) { isEndCodePoint[b - keyword + 1] = false; }
+      ptr = result.next;
     }
 
-    // -----------------------------
-    // Step 2: Trie insertion
-    // -----------------------------
     int restartCount = 0;
   restart:
     if (restartCount++) yield(restartCount);
@@ -93,15 +80,14 @@ class Tree {
       if (needRestart) goto restart;
 
       if (nextNode == nullptr) {
-        auto generateVal = [&]() {
-          auto lastNode = N256::setLeaf(
-            Leaf::MakeLeaf(reinterpret_cast<const uint8_t *>(keyword), keywordLen, mustAppendNull, insert_fn()));
+        // Build the missing suffix of the path bottom-up, then attach it.
+        auto generateVal = [&]() -> N256 * {
+          N256 *lastNode = N256::setLeaf(Leaf::MakeLeaf(insert_fn()));
           if (level < keywordLen - 1 + mustAppendNull) {
             auto range = std::views::iota(level + 1, keywordLen + mustAppendNull) | std::views::reverse;
             for (auto idx : range) {
-              auto aboveKey = getNextChar(keyword, keywordLen, mustAppendNull, idx);
-              auto n256     = N256::makeNode(isEndCodePoint[idx]);
-              n256->insert(aboveKey, lastNode);
+              auto n256 = N256::makeNode(isEndCodePoint[idx]);
+              n256->insert(getNextChar(keyword, keywordLen, mustAppendNull, idx), lastNode);
               lastNode = n256;
             }
           }
@@ -117,42 +103,18 @@ class Tree {
         if (needRestart) goto restart;
       }
 
+      // Under the fully-expanded trie invariant (every keyword ends with '\0'
+      // and leaves hang only off the '\0' child), a leaf is only reachable
+      // when nodeKey == '\0', which means the full key has been consumed and
+      // this is a duplicate insertion — unconditional upsert.
       if (N256::isLeaf(nextNode)) {
         node->upgradeToWriteLockOrRestart(v, needRestart);
         if (needRestart) goto restart;
-
-        // Matching key, call upsert() -- Only works with trie. With prefix tree/radix tree/variants, this is wrong
-        auto leaf = reinterpret_cast<Leaf *>(N256::getLeaf(nextNode));
-        if (leaf->equal(keyword, keywordLen, mustAppendNull)) {
-          // upsert
-          auto tid = N256::getLeaf(nextNode)->auxIndex;
-          upsert_fn(tid);
-          node->writeUnlock();
-          return;
-        }
-
-        // Create new inner node to replace the leaf
-        auto iterNode = N256::makeNode(isEndCodePoint[level]);
-        node->change(nodeKey, iterNode);
-        level++;
-        assert(level < leaf->keyLen);  // prevent inserting when prefix of key exists already
-        // Start inserting new intermediate nodes to represent shared prefix
-        uint32_t prefixLength = 0;
-        for (; (*leaf)[level + prefixLength] == getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength);
-             ++prefixLength) {
-          auto n256 = N256::makeNode(isEndCodePoint[level + prefixLength]);
-          iterNode->insert(getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength), n256);
-          iterNode = n256;
-        }
-        auto newNodeKey = getNextChar(keyword, keywordLen, mustAppendNull, level + prefixLength);
-        assert(newNodeKey != (*leaf)[level + prefixLength]);  // should be different key here
-        iterNode->insert(keyword[level + prefixLength],
-                         N256::setLeaf(Leaf::MakeLeaf(reinterpret_cast<const uint8_t *>(keyword), keywordLen,
-                                                      mustAppendNull, insert_fn())));
-        iterNode->insert((*leaf)[level + prefixLength], nextNode);
+        upsert_fn(N256::getLeaf(nextNode)->auxIndex);
         node->writeUnlock();
         return;
       }
+
       level++;
       parentVersion = v;
     }

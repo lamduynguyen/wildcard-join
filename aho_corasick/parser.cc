@@ -3,13 +3,6 @@
 namespace aho_corasick {
 
 auto TextParserIterator::ParseText() -> OutputEmitType {
-  /**
-   * Output link logic:
-   * - In standard AhoCorasick, following suffix links leads to a node with a NULL_TERMINATOR
-   *   child -- this is an output link.
-   * - Here we store output links directly as trie leaves (NULL_TERMINATOR children), so we
-   *   collect them by traversing getOutputLink() chains.
-   */
   OutputEmitType result;
   while (CanAdvanceOneCodePoint()) {
     auto matches = ContinueParseText();
@@ -20,7 +13,7 @@ auto TextParserIterator::ParseText() -> OutputEmitType {
 
 template <typename BitMap>
 void TextParserIterator::IterateOneCodePoint(BitMap &result) {
-  const auto end_offset = text_offset;  // byte offset before advancing
+  const auto end_offset = text_offset;
   const auto ac_matches = ContinueParseText();
 
   for (const auto &match : ac_matches) {
@@ -29,12 +22,10 @@ void TextParserIterator::IterateOneCodePoint(BitMap &result) {
     auto &matcher       = instances[pat_id];
     const auto &segment = sket[matcher.CurrentSegmentIdx()];
 
-    if (result[pat_id]) { continue; }  // already matched, skip
+    if (result[pat_id]) { continue; }
 
     if (!matcher.TryMatchingLiteral(sket, match, codepoint_idx, queue)) { continue; }
 
-    // Check whether this literal completes the current segment and, if so,
-    // whether the full pattern is now satisfied
     if (segment.IsLastLiteral(match.pattern_index.start_pos) &&
         sket.ValidLastLiteral(match, matcher.CurrentSegmentIdx(), text, text_len) &&
         !matcher.AdvanceNextSegment(sket, end_offset + segment.suffix_underscore_cnt + 1)) {
@@ -46,15 +37,10 @@ void TextParserIterator::IterateOneCodePoint(BitMap &result) {
 auto TextParserIterator::ContinueParseText() -> OutputEmitType {
   OutputEmitType result;
 
-  // Read the next UTF-8 code point
   const auto *cp     = text + text_offset;
   const auto cp_info = umbra::Utf8::readCodePoint(cp, text + text_len);
   const auto cp_len  = cp_info.next - cp;
 
-  // Advance the AhoCorasick automaton:
-  //   1. No transition from current node → follow suffix links back toward root
-  //   2. Transition leads to a terminal node → record match and continue
-  //   3. Transition leads to an internal node → move forward
   auto next = AhoCorasick::VisitCodePoint(ptr, cp, cp_len);
   while (ptr != automaton->GetRoot() && next == nullptr) {
     ptr  = ptr->getSuffixLink();
@@ -70,7 +56,6 @@ auto TextParserIterator::ContinueParseText() -> OutputEmitType {
     }
   }
 
-  // Follow output-link chain to collect all patterns that end here
   for (auto out = ptr->getOutputLink(); out != nullptr; out = out->getOutputLink()) {
     if (out->isTerminalNode()) {
       auto leaf = out->getChild(NULL_TERMINATOR);
@@ -85,20 +70,19 @@ auto TextParserIterator::ContinueParseText() -> OutputEmitType {
 
 void TextParserIterator::AppendResult(ART::N256 *leaf, size_t cp_len, OutputEmitType &out_result) const {
   assert(ART::N256::isLeaf(leaf));
-  const auto *node       = ART::N256::getLeaf(leaf);
-  const auto keyword_id  = node->auxIndex;
-  const auto literal_len = node->keyLenWithoutNullTerminator();
-  const auto match_pos   = text_offset - literal_len + cp_len;
+  const auto keyword_id = ART::N256::getLeaf(leaf)->auxIndex;
 
   auto it = automaton->literal_map_.find(keyword_id);
   assert(it != automaton->literal_map_.end());
-  for (auto value : it->second) {
+
+  const auto literal_len = it->second.literal_len;
+  const auto match_pos   = text_offset - literal_len + cp_len;
+
+  for (auto value : it->second.bitmap) {
     auto pattern_idx = PatternIndexType::FromUint(value);
     out_result.emplace(pattern_idx, literal_len, match_pos);
   }
 }
-
-// ---- ProcessDelayedMatching -------------------------------------------------
 
 void TextParserIterator::ProcessDelayedMatching() {
   while (queue.FrontReady(codepoint_idx)) {
@@ -107,8 +91,6 @@ void TextParserIterator::ProcessDelayedMatching() {
     queue.Pop();
   }
 }
-
-// ---- Explicit instantiations ------------------------------------------------
 
 template void TextParserIterator::IterateOneCodePoint<std::vector<bool>>(std::vector<bool> &);
 

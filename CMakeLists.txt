@@ -56,6 +56,11 @@ if(ENABLE_TESTING)
   add_subdirectory(test)
 endif()
 
+option(ENABLE_BENCHMARK "Build benchmark binaries" OFF)
+if(ENABLE_BENCHMARK)
+  add_subdirectory(benchmark)
+endif()
+
 option(SANITIZER "Compile with sanitizer" OFF)
 if(SANITIZER)
   message(STATUS "Enable sanitizer")

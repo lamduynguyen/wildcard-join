@@ -3,6 +3,7 @@
 #include "common/constant.h"
 #include "common/typedef.h"
 
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <cassert>

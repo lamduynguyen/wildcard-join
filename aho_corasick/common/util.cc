@@ -4,7 +4,9 @@
 #include "fmt/format.h"
 
 #include <fcntl.h>
+#ifdef __linux__
 #include <linux/fs.h>
+#endif
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -24,7 +26,9 @@ namespace aho_corasick {
 
 auto AllocHuge(size_t size) -> void * {
   void *p = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#ifdef __linux__
   madvise(p, size, MADV_HUGEPAGE);
+#endif
   return p;
 }
 
@@ -55,6 +59,7 @@ auto DownAlign(u64 x, u64 align_size) -> u64 {
 }
 
 void PinThisThread(u16 t_i) {
+#ifdef __linux__
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
   CPU_SET(t_i, &cpuset);
@@ -62,6 +67,9 @@ void PinThisThread(u16 t_i) {
   if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) {
     throw std::runtime_error("Could not pin a thread, maybe because of over subscription?");
   }
+#else
+  (void)t_i;
+#endif
 }
 
 auto IsAligned(u64 align_size, const void *p, size_t p_size) -> bool {

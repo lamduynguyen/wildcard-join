@@ -480,7 +480,8 @@ static auto ms_of(std::chrono::nanoseconds ns) -> double {
 
 static auto write_timing(const fs::path &out_path, const Workload &w,
                          const RunStats &ac, const RunStats &dd,
-                         const RunStats *de) -> void {
+                         const RunStats *de,
+                         bool emit_ac = true, bool emit_dd = true) -> void {
   std::ofstream f(out_path);
   f << "workload,impl,rows,patterns,total_text_bytes,build_ms,probe_ms,"
        "match_count,rows_per_s,mb_per_s,max_rss_kb\n";
@@ -498,8 +499,8 @@ static auto write_timing(const fs::path &out_path, const Workload &w,
       << fmt::format("{:.3f}", mbps) << ','
       << s.max_rss_kb << '\n';
   };
-  emit_row("AC", ac);
-  emit_row("DuckDB-recursive", dd);
+  if (emit_ac) emit_row("AC", ac);
+  if (emit_dd) emit_row("DuckDB-recursive", dd);
   if (de != nullptr) emit_row("DuckDB-engine", *de);
 }
 
@@ -555,16 +556,36 @@ int main(int argc, char **argv) {
       fmt::print(stderr, "skip {}: empty texts or patterns\n", dir.string());
       continue;
     }
-    auto ac = run_ac(w, repeats);
-    auto dd = run_duckdb(w, repeats);
+    const char *only = std::getenv("HN_BENCH_ONLY");
+    bool run_ac_flag    = !only || std::string_view(only) == "ac";
+    bool run_ddrec_flag = !only || std::string_view(only) == "ddrec";
+    bool run_ddeng_flag = !only || std::string_view(only) == "ddeng";
+
+    RunStats ac{}, dd{};
+    if (run_ac_flag) {
+      fmt::print(stderr, "[{}] AC...\n", w.name); fflush(stderr);
+      ac = run_ac(w, repeats);
+    }
+    if (run_ddrec_flag) {
+      fmt::print(stderr, "[{}] DDrec...\n", w.name); fflush(stderr);
+      dd = run_duckdb(w, repeats);
+    }
 #ifdef HN_BENCH_HAVE_DUCKDB
-    RunStats de = run_duckdb_engine(w, repeats);
-    const RunStats *de_ptr = &de;
+    RunStats de{};
+    if (run_ddeng_flag) {
+      fmt::print(stderr, "[{}] DDeng...\n", w.name); fflush(stderr);
+      de = run_duckdb_engine(w, repeats);
+    }
+    const RunStats *de_ptr = run_ddeng_flag ? &de : nullptr;
 #else
     const RunStats *de_ptr = nullptr;
 #endif
-    print_console(w, ac, dd, de_ptr);
-    write_timing(dir / "timing.csv", w, ac, dd, de_ptr);
+
+    std::string suffix;
+    if (only) suffix = std::string("_") + only;
+    write_timing(dir / ("timing" + suffix + ".csv"), w, ac, dd, de_ptr,
+                 run_ac_flag, run_ddrec_flag);
+    if (!only) print_console(w, ac, dd, de_ptr);
     if (w.has_labels) {
       // Cross-check: AC match count must equal DuckDB-engine label count.
       size_t expected = w.labels.size();

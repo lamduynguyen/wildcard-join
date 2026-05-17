@@ -71,9 +71,20 @@ auto Skeleton::SpecialMatchEmptyPattern(const char *p, u32 plen, const char *s, 
 
 // --------------------------------------------------------------------------------------------
 
+// Cap must accommodate every alignment that may be in match_ simultaneously.
+// With a prefix `%` and repeated literals, many alignments can ripen at the
+// same codepoint; bounding by max_underscore_cnt alone evicts valid entries.
+static inline auto LruCapForSegment(const Skeleton::Segment &seg) -> u64 {
+  u64 cap = seg.max_underscore_cnt + 1;
+  if (!seg.literal_offset.empty()) {
+    cap = std::max<u64>(cap, static_cast<u64>(seg.literal_offset.back()) + 1);
+  }
+  return cap;
+}
+
 auto Skeleton::InitializeMatcher() const -> Matcher {
   assert(!seg_.empty());
-  return Matcher(seg_[0].max_underscore_cnt);
+  return Matcher(LruCapForSegment(seg_[0]));
 }
 
 /**
@@ -89,16 +100,18 @@ auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_seg
   auto next_sket_index = curr_segment_idx + 1;
 
   if (next_sket_index < seg_.size()) { return true; }   // more segments remain
-  if (seg_.back().has_suffix_percent) { return true; }  // trailing % absorbs anything
 
-  // Match suffix underscores against remaining code points exactly
-  // TODO: Optimize -- interleave with the main iterate.CanAdvanceOneCodePoint() loop
+  // Even with a trailing `%`, the trailing `_`s impose a minimum-length tail
+  // constraint: there must be ≥ suffix_underscore_cnt codepoints between the
+  // end of the last literal and the end of the text. Without `%`, the count
+  // must match exactly.
   auto iterate_cur = ac_match.text_start_pos + ac_match.literal_len;
   for (auto idx = 0U; idx < segment.suffix_underscore_cnt; idx++) {
     if (iterate_cur >= text_length) { return false; }
     auto next_cp = umbra::Utf8::readCodePoint(text + iterate_cur, text + text_length);
     iterate_cur += next_cp.next - (text + iterate_cur);
   }
+  if (seg_.back().has_suffix_percent) { return true; }  // trailing % absorbs any further bytes
   return iterate_cur == text_length;
 }
 
@@ -142,7 +155,7 @@ auto Matcher::AdvanceNextSegment(const Skeleton &sket, u64 min_text_next_start_p
   segment_idx_++;
   min_text_start_pos_ = min_text_next_start_pos;
   if (segment_idx_ < sket.Size()) {
-    match_ = LRUCache<u64, u16>(sket[segment_idx_].max_underscore_cnt + 1);
+    match_ = LRUCache<u64, u16>(LruCapForSegment(sket[segment_idx_]));
     return true;
   }
   return false;

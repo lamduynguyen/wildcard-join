@@ -1,0 +1,26 @@
+add_executable(baseline_bench baseline_bench.cc)
+target_link_libraries(baseline_bench PUBLIC ahocorasick fmt::fmt)
+# DuckDB-engine baseline for the synthetic bench (same find logic as hn_bench).
+find_library(DUCKDB_LIB NAMES duckdb HINTS /opt/homebrew/lib /usr/local/lib)
+find_path(DUCKDB_INCLUDE_DIR duckdb.h HINTS /opt/homebrew/include /usr/local/include)
+if(DUCKDB_LIB AND DUCKDB_INCLUDE_DIR)
+  target_compile_definitions(baseline_bench PRIVATE HN_BENCH_HAVE_DUCKDB=1)
+  target_include_directories(baseline_bench PRIVATE ${DUCKDB_INCLUDE_DIR})
+  target_link_libraries(baseline_bench PUBLIC ${DUCKDB_LIB})
+endif()
+
+add_executable(hn_bench hn_bench.cc)
+target_link_libraries(hn_bench PUBLIC ahocorasick fmt::fmt)
+target_include_directories(hn_bench PRIVATE ${CMAKE_SOURCE_DIR})
+
+# DuckDB-engine baseline (libduckdb C API, installed via Homebrew on macOS).
+find_library(DUCKDB_LIB NAMES duckdb HINTS /opt/homebrew/lib /usr/local/lib)
+find_path(DUCKDB_INCLUDE_DIR duckdb.h HINTS /opt/homebrew/include /usr/local/include)
+if(DUCKDB_LIB AND DUCKDB_INCLUDE_DIR)
+  target_compile_definitions(hn_bench PRIVATE HN_BENCH_HAVE_DUCKDB=1)
+  target_include_directories(hn_bench PRIVATE ${DUCKDB_INCLUDE_DIR})
+  target_link_libraries(hn_bench PUBLIC ${DUCKDB_LIB})
+  message(STATUS "hn_bench: DuckDB-engine baseline ENABLED (${DUCKDB_LIB})")
+else()
+  message(STATUS "hn_bench: libduckdb not found; DuckDB-engine baseline DISABLED")
+endif()

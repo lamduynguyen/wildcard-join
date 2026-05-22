@@ -27,8 +27,15 @@ endif()
 # Dependencies
 # ---------------------------------------------------------------------------
 find_package(GTest REQUIRED)
+find_package(fmt REQUIRED)
+find_package(TBB REQUIRED)
 
-add_subdirectory(third_party/succinct)
+# third_party/succinct uses x86 MMX intrinsics; skip on non-x86.
+# The AC code does not actually reference succinct symbols.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  add_subdirectory(third_party/succinct)
+  set(SUCCINCT_LIB succinct)
+endif()
 add_subdirectory(third_party/croaring)
 
 # ---------------------------------------------------------------------------
@@ -36,7 +43,7 @@ add_subdirectory(third_party/croaring)
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE SOURCE_FILES aho_corasick/**.cc aho_corasick/**/**.cc aho_corasick/**/**.h)
 add_library(ahocorasick STATIC ${SOURCE_FILES})
-target_link_libraries(ahocorasick PUBLIC succinct fmt croaring tbb)
+target_link_libraries(ahocorasick PUBLIC ${SUCCINCT_LIB} fmt::fmt croaring TBB::tbb GTest::gtest)
 target_include_directories(ahocorasick PUBLIC aho_corasick/include)
 
 # ---------------------------------------------------------------------------
@@ -47,6 +54,11 @@ if(ENABLE_TESTING)
   enable_testing()
   set(CMAKE_BUILD_TYPE "DEBUG")
   add_subdirectory(test)
+endif()
+
+option(ENABLE_BENCHMARK "Build benchmark binaries" OFF)
+if(ENABLE_BENCHMARK)
+  add_subdirectory(benchmark)
 endif()
 
 option(SANITIZER "Compile with sanitizer" OFF)

@@ -4,6 +4,7 @@
 #include <cassert>
 #include <functional>
 #include <ranges>
+#include <vector>
 
 #include "art/node.h"
 #include "common/utf8.h"
@@ -22,7 +23,13 @@ class Tree {
 
   inline void yield(int count) const {
     if (count > 3) sched_yield();
+#if defined(__x86_64__) || defined(__i386__)
     else           asm volatile("pause");
+#elif defined(__aarch64__) || defined(__arm__)
+    else           asm volatile("yield");
+#else
+    else           sched_yield();
+#endif
   }
 
   inline uint8_t getNextChar(const char *keyword, uint64_t keywordLen, bool mustAppendNull, uint64_t index) {

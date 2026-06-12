@@ -1,3 +1,0 @@
-[submodule "succinct"]
-	path = third_party/succinct
-	url = git@github.com:lamduynguyen/succinct.git

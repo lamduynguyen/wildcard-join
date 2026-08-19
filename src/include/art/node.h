@@ -40,7 +40,7 @@ class N256 {
   N256(N256 &&)      = delete;
 
   std::atomic<uint64_t> versionLock{0b10};  // 63b version | 1b lock
-  uint16_t count      = 0;  // up to 256 children, so uint8_t wraps to 0 on a full node
+  uint16_t count = 0;                       // up to 256 children, so uint8_t wraps to 0 on a full node
 
   bool isCodePointEnd = false;
   N256 *children[256];
@@ -84,8 +84,7 @@ class N256 {
   // nothing reads it. Kept in the signature rather than deleted, since a node
   // type that does grow would want it back.
   void insertAndUnlock(uint64_t v, N256 *parentNode, uint64_t parentVersion, [[maybe_unused]] uint8_t keyParent,
-                       uint8_t key,
-                       std::function<N256 *()> generateVal, bool &needRestart) {
+                       uint8_t key, std::function<N256 *()> generateVal, bool &needRestart) {
     if (parentNode != nullptr) {
       parentNode->readUnlockOrRestart(parentVersion, needRestart);
       if (needRestart) return;
@@ -100,25 +99,36 @@ class N256 {
   // Aho-Corasick: suffix and output links
   auto isTerminalNode() -> bool { return children[NULL_TERMINATOR] != nullptr; }
 
-  void  setSuffixLink(N256 *n) { links[0] = n; }
-  N256 *getSuffixLink() const  { return links[0]; }
-  void  setOutputLink(N256 *n) { links[1] = n; }
-  N256 *getOutputLink() const  { return links[1]; }
+  void setSuffixLink(N256 *n) { links[0] = n; }
+
+  N256 *getSuffixLink() const { return links[0]; }
+
+  void setOutputLink(N256 *n) { links[1] = n; }
+
+  N256 *getOutputLink() const { return links[1]; }
 
   // Leaf tagging (high bit of pointer)
   static Leaf *getLeaf(const N256 *n) {
     return reinterpret_cast<Leaf *>(reinterpret_cast<uintptr_t>(n) & ((static_cast<uint64_t>(1) << 63) - 1));
   }
-  static bool isLeaf(const N256 *n) {
-    return (reinterpret_cast<uint64_t>(n) >> 63) == 1;
-  }
+
+  static bool isLeaf(const N256 *n) { return (reinterpret_cast<uint64_t>(n) >> 63) == 1; }
+
   static N256 *setLeaf(Leaf *leaf) {
     return reinterpret_cast<N256 *>(reinterpret_cast<uintptr_t>(leaf) | (static_cast<uint64_t>(1) << 63));
   }
 
   // Child access
-  bool  change(uint8_t key, N256 *val) { children[key] = val; return true; }
-  void  insert(uint8_t key, N256 *val) { children[key] = val; count++; }
+  bool change(uint8_t key, N256 *val) {
+    children[key] = val;
+    return true;
+  }
+
+  void insert(uint8_t key, N256 *val) {
+    children[key] = val;
+    count++;
+  }
+
   N256 *getChild(const uint8_t k) const { return children[k]; }
 
   uint64_t getChildren(uint8_t start, uint8_t end, std::tuple<uint8_t, N256 *> *children,
@@ -129,8 +139,7 @@ class N256 {
     if (needRestart) goto restart;
     childrenCount = 0;
     for (unsigned i = start; i <= end; i++) {
-      if (this->children[i] != nullptr)
-        children[childrenCount++] = std::make_tuple(i, this->children[i]);
+      if (this->children[i] != nullptr) children[childrenCount++] = std::make_tuple(i, this->children[i]);
     }
     readUnlockOrRestart(v, needRestart);
     if (needRestart) goto restart;

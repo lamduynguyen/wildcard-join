@@ -24,11 +24,14 @@ class Tree {
   inline void yield(int count) const {
     if (count > 3) sched_yield();
 #if defined(__x86_64__) || defined(__i386__)
-    else           asm volatile("pause");
+    else
+      asm volatile("pause");
 #elif defined(__aarch64__) || defined(__arm__)
-    else           asm volatile("yield");
+    else
+      asm volatile("yield");
 #else
-    else           sched_yield();
+    else
+      sched_yield();
 #endif
   }
 

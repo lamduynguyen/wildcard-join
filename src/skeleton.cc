@@ -76,9 +76,7 @@ auto Skeleton::SpecialMatchEmptyPattern(const char *p, u32 plen, const char *s, 
 // same codepoint; bounding by max_underscore_cnt alone evicts valid entries.
 static inline auto LruCapForSegment(const Skeleton::Segment &seg) -> u64 {
   u64 cap = seg.max_underscore_cnt + 1;
-  if (!seg.literal_offset.empty()) {
-    cap = std::max<u64>(cap, static_cast<u64>(seg.literal_offset.back()) + 1);
-  }
+  if (!seg.literal_offset.empty()) { cap = std::max<u64>(cap, static_cast<u64>(seg.literal_offset.back()) + 1); }
   return cap;
 }
 
@@ -99,7 +97,7 @@ auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_seg
   const auto &segment  = seg_[curr_segment_idx];
   auto next_sket_index = curr_segment_idx + 1;
 
-  if (next_sket_index < seg_.size()) { return true; }   // more segments remain
+  if (next_sket_index < seg_.size()) { return true; }  // more segments remain
 
   // Even with a trailing `%`, the trailing `_`s impose a minimum-length tail
   // constraint: there must be ≥ suffix_underscore_cnt codepoints between the

@@ -116,8 +116,8 @@ bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
 }
 
 template <typename StringT>
-auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT> patterns, std::string_view escape_str)
-  -> std::vector<bool> {
+auto AhoCorasickMultiplePatterns(const char *s, size_t slen, std::vector<StringT> patterns,
+                                 std::string_view escape_str) -> std::vector<bool> {
   // #1. Aho-Corasick env. Trie must be global scope
   auto trie = aho_corasick::AhoCorasick();
 

@@ -51,8 +51,8 @@ struct MatchingOutputType {
 
   struct Hasher {
     std::size_t operator()(const MatchingOutputType &k) const noexcept {
-      u64 h1 = HashFn(k.pattern_index.ToUint());
-      u64 h2 = HashFn(k.text_start_pos);
+      const u64 h1 = HashFn(k.pattern_index.ToUint());
+      const u64 h2 = HashFn(k.text_start_pos);
       return h1 ^ (h2 + 0x9e3779b97f4a7c15 + (h1 << 12) + (h1 >> 4));
     }
   };

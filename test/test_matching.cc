@@ -5,19 +5,20 @@
 
 #include <string>
 
-#define RUN_AHOCORASICK_ESCAPE_TEST(text, patterns, tests, escape_char)                                              \
-  {                                                                                                                  \
-    std::transform(tests.begin(), tests.end(), std::back_inserter(patterns), [](const auto &p) { return p.first; }); \
-    auto results =                                                                                                   \
-      AhoCorasickMultiplePatterns(reinterpret_cast<char *>(text.data()), text.size(), patterns, escape_char);        \
-    for (auto idx = 0UL; idx < tests.size(); idx++) {                                                                \
-      auto &[pat, result] = tests[idx];                                                                              \
-      if (results[idx] != result) {                                                                                  \
-        fmt::print("AhoCorasick Multi matching: evaluate pattern '{}' return wrong result\n",                        \
-                   reinterpret_cast<const char *>(pat.data()));                                                      \
-      }                                                                                                              \
-      EXPECT_EQ(results[idx], result);                                                                               \
-    }                                                                                                                \
+#define RUN_AHOCORASICK_ESCAPE_TEST(text, patterns, tests, escape_char)                                               \
+  {                                                                                                                   \
+    std::transform((tests).begin(), (tests).end(), std::back_inserter(patterns),                                      \
+                   [](const auto &p) { return p.first; });                                                            \
+    auto results =                                                                                                    \
+      AhoCorasickMultiplePatterns(reinterpret_cast<char *>((text).data()), (text).size(), (patterns), (escape_char)); \
+    for (auto idx = 0UL; idx < (tests).size(); idx++) {                                                               \
+      auto &[pat, result] = (tests)[idx];                                                                             \
+      if (results[idx] != result) {                                                                                   \
+        fmt::print("AhoCorasick Multi matching: evaluate pattern '{}' return wrong result\n",                         \
+                   reinterpret_cast<const char *>(pat.data()));                                                       \
+      }                                                                                                               \
+      EXPECT_EQ(results[idx], result);                                                                                \
+    }                                                                                                                 \
   }
 
 TEST(TestMatching, ASCII) {
@@ -153,18 +154,14 @@ TEST(TestMatching, ASCII) {
   // DuckDB Matching
   for (auto &[pat, result] : tests) {
     auto try_pat = DuckDBMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
-    if (try_pat != result) {
-      std::cout << "DuckDB: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
-    }
+    if (try_pat != result) { std::cout << "DuckDB: evaluate pattern: '" << pat << "' return wrong result\n"; }
     EXPECT_EQ(try_pat, result);
   }
 
   // Greedy Matching
   for (auto &[pat, result] : tests) {
     auto try_pat = GreedyMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
-    if (try_pat != result) {
-      std::cout << "Greedy: evaluate pattern: '" << pat << "' return wrong result" << std::endl;
-    }
+    if (try_pat != result) { std::cout << "Greedy: evaluate pattern: '" << pat << "' return wrong result\n"; }
     EXPECT_EQ(try_pat, result);
   }
 

@@ -15,13 +15,23 @@
 using aho_corasick::Tokenizer;
 using namespace std::string_view_literals;
 
-bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
+// inline because these are definitions in a header. Only test_matching.cc
+// includes it today, so nothing links twice yet, and that is the whole reason
+// to fix it now rather than when a second test picks the header up.
+inline bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
   size_t pidx = 0;
   size_t sidx = 0;
   for (; pidx < plen && sidx < slen;) {
     auto pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
     auto schar = umbra::Utf8::readCodePoint(&sdata[sidx], sdata + slen);
 
+    // The body here is identical to the one in the codePoint == codePoint arm
+    // below, and it is meant to be: "_" consumes exactly one code point on each
+    // side, which is the same step a literal match takes. The two arms cannot
+    // be merged into one condition because "%" has to be tested between them,
+    // and a pattern "%" against a text "%" would take the wrong arm if the
+    // equality test came first.
+    // NOLINTNEXTLINE(bugprone-branch-clone)
     if (pchar.codePoint == Tokenizer::UNDERSCORE) {
       pidx = pchar.next - pdata;
       sidx = schar.next - sdata;
@@ -52,7 +62,7 @@ bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t pl
   return pidx == plen && sidx == slen;
 }
 
-bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
+inline bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
   size_t sidx = 0;
   size_t pidx = 0;
 

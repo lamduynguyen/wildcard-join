@@ -130,7 +130,8 @@ auto Matcher::TryMatchingLiteral(const Skeleton &sket, const MatchingOutputType 
   // - Non-first literal -- previous literal must exist at the exact expected gap (diff)
   if (segment.IsFirstLiteral(pat_pos)) {
     // With prefix %: can start anywhere. Without: must align exactly with text start.
-    if (!segment.has_prefix_percent && !(segment_idx_ == 0 && ac_match.text_start_pos == pat_pos)) { return false; }
+    const bool anchored_at_text_start = segment_idx_ == 0 && ac_match.text_start_pos == pat_pos;
+    if (!segment.has_prefix_percent && !anchored_at_text_start) { return false; }
   } else {
     const auto diff = ac_match.text_start_pos - pat_pos;
     if (!Contain(diff)) { return false; }

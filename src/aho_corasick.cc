@@ -14,8 +14,8 @@ auto AhoCorasick::GetRoot() const -> ART::N256 * { return trie_->root; }
 
 void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_auxIndex) {
   assert(keyword_len > 0);
-  bool must_append_null = (keyword[keyword_len - 1] != NULL_TERMINATOR);
-  const u32 literal_len = static_cast<u32>(keyword_len);  // excludes the null terminator appended by the trie
+  const bool must_append_null = (keyword[keyword_len - 1] != NULL_TERMINATOR);
+  const u32 literal_len       = static_cast<u32>(keyword_len);  // excludes the null terminator appended by the trie
 
   auto new_tid = [&]() {
     auto tid = NUMBER_OF_UNIQUE_LITERALS.fetch_add(1, std::memory_order_relaxed);

@@ -107,17 +107,17 @@ auto NextUtf8Char(const std::u8string &s, std::size_t &i) -> c32 {
     return p[i++];
   } else if ((c >> 5) == 0x6) {
     // 2-byte sequence
-    char32_t cp = ((c & 0x1F) << 6) | (p[i + 1] & 0x3F);
+    const char32_t cp = ((c & 0x1F) << 6) | (p[i + 1] & 0x3F);
     i += 2;
     return cp;
   } else if ((c >> 4) == 0xE) {
     // 3-byte sequence
-    char32_t cp = ((c & 0x0F) << 12) | ((p[i + 1] & 0x3F) << 6) | (p[i + 2] & 0x3F);
+    const char32_t cp = ((c & 0x0F) << 12) | ((p[i + 1] & 0x3F) << 6) | (p[i + 2] & 0x3F);
     i += 3;
     return cp;
   } else if ((c >> 3) == 0x1E) {
     // 4-byte sequence
-    char32_t cp = ((c & 0x07) << 18) | ((p[i + 1] & 0x3F) << 12) | ((p[i + 2] & 0x3F) << 6) | (p[i + 3] & 0x3F);
+    const char32_t cp = ((c & 0x07) << 18) | ((p[i + 1] & 0x3F) << 12) | ((p[i + 2] & 0x3F) << 6) | (p[i + 3] & 0x3F);
     i += 4;
     return cp;
   }

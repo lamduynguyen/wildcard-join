@@ -1,11 +1,12 @@
 #ifndef ART_OPTIMISTIC_LOCK_COUPLING_N_H
 #define ART_OPTIMISTIC_LOCK_COUPLING_N_H
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
-#include <cstring>
 #include <functional>
+#include <iterator>
 #include <utility>
 
 using TupleID                            = uint64_t;
@@ -32,7 +33,12 @@ class N256 {
   friend class Tree;
 
   N256(bool isCodePointEnd) : isCodePointEnd(isCodePointEnd) {
-    memset(children, NULL_TERMINATOR, sizeof(children));
+    // fill_n and not memset. NULL_TERMINATOR is a key byte, and using it as a
+    // fill byte only produced null pointers because it happens to be zero, so
+    // the line read as if the array were being filled with terminators. It also
+    // needed a cast through void * to get past the pointer to pointer
+    // conversion. This says what it means and emits the same stores.
+    std::fill_n(children, std::size(children), nullptr);
     if (isCodePointEnd) { links[0] = links[1] = nullptr; }
   }
 
@@ -69,7 +75,7 @@ class N256 {
   void writeUnlock() { versionLock.fetch_add(0b1); }
 
   uint64_t readLockOrRestart(bool &needRestart) const {
-    uint64_t version = versionLock.load();
+    const uint64_t version = versionLock.load();
     if (isLocked(version)) { needRestart = true; }
     return version;
   }
@@ -84,7 +90,7 @@ class N256 {
   // nothing reads it. Kept in the signature rather than deleted, since a node
   // type that does grow would want it back.
   void insertAndUnlock(uint64_t v, N256 *parentNode, uint64_t parentVersion, [[maybe_unused]] uint8_t keyParent,
-                       uint8_t key, std::function<N256 *()> generateVal, bool &needRestart) {
+                       uint8_t key, const std::function<N256 *()> &generateVal, bool &needRestart) {
     if (parentNode != nullptr) {
       parentNode->readUnlockOrRestart(parentVersion, needRestart);
       if (needRestart) return;
@@ -135,7 +141,7 @@ class N256 {
                        uint32_t &childrenCount) const {
   restart:
     bool needRestart = false;
-    uint64_t v       = readLockOrRestart(needRestart);
+    const uint64_t v = readLockOrRestart(needRestart);
     if (needRestart) goto restart;
     childrenCount = 0;
     for (unsigned i = start; i <= end; i++) {

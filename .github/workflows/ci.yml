@@ -204,3 +204,24 @@ jobs:
       - uses: actions/checkout@v5
       - run: pipx install clang-format==18.1.8
       - run: scripts/format.sh --check
+
+  # Pinned for the same reason as clang-format, and more so: the check set
+  # grows with every release, so an unpinned clang-tidy turns somebody else's
+  # unrelated PR red on the day the runner image moves. What is enabled, and
+  # the reasoning behind every one of the five checks that is not, is in
+  # .clang-tidy.
+  #
+  # CC and CXX are forced to clang because clang-tidy reads the compile
+  # commands cmake writes and a gcc command line carries flags it does not
+  # understand. Nothing is linked here, the build step in tidy.sh only exists
+  # to generate the headers the fetched dependencies produce at configure time.
+  clang-tidy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v5
+      - run: pipx install clang-tidy==18.1.8
+      - run: scripts/tidy.sh

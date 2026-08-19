@@ -46,7 +46,7 @@ class RandomGenerator {
   // ATTENTION: interval [min, max)
   template <typename T>
   static auto GetRand(T min, T max) -> T {
-    u64 rand = GetRandU64(min, max);
+    const u64 rand = GetRandU64(min, max);
     return static_cast<T>(rand);
   }
 

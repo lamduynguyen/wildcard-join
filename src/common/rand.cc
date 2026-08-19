@@ -20,7 +20,7 @@ void MersenneTwister::Init(u64 seed) {
 auto MersenneTwister::Rand() -> u64 {
   int i;
   u64 x;
-  static u64 mag01[2] = {0ULL, MATRIX_A};
+  static const u64 mag01[2] = {0ULL, MATRIX_A};
 
   if (mti_ >= NN) { /* generate NN words at one time */
     for (i = 0; i < NN - MM; i++) {
@@ -79,7 +79,7 @@ auto ZipfGenerator::Rand() -> int {
 auto ZipfGenerator::NoElements() -> int { return n_elements_; }
 
 auto RandomGenerator::GetRandU64(u64 min, u64 max) -> u64 {
-  u64 rand = min + (mt_generator.Rand() % (max - min));
+  const u64 rand = min + (mt_generator.Rand() % (max - min));
   assert(rand < max);
   assert(rand >= min);
   return rand;

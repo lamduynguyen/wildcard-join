@@ -62,7 +62,6 @@ set(SOURCE_FILES
     src/parser.cc
     src/skeleton.cc
     src/tokenizer.cc
-    src/common/rand.cc
     src/common/util.cc)
 
 add_library(ahocorasick STATIC ${SOURCE_FILES})

@@ -1,26 +1,15 @@
 #include "common/util.h"
 #include "common/typedef.h"
 
-#include "fmt/format.h"
-
-#include <fcntl.h>
-#ifdef __linux__
-#include <linux/fs.h>
-#endif
-#include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
+#ifdef __linux__
+#include <pthread.h>
+#include <sched.h>
+#endif
 #include <atomic>
 #include <cassert>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <numeric>
-#include <ranges>
-#include <span>
-#include <string_view>
-#include <vector>
+#include <stdexcept>
 
 namespace aho_corasick {
 

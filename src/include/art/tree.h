@@ -32,7 +32,10 @@ class Tree {
 #endif
   }
 
-  inline uint8_t getNextChar(const char *keyword, uint64_t keywordLen, bool mustAppendNull, uint64_t index) {
+  // mustAppendNull is only read by the assert, so it is unused in a release
+  // build and -Wunused-parameter says so.
+  inline uint8_t getNextChar(const char *keyword, uint64_t keywordLen, [[maybe_unused]] bool mustAppendNull,
+                             uint64_t index) {
     return (index >= keywordLen) ? (assert(mustAppendNull), NULL_TERMINATOR) : static_cast<uint8_t>(keyword[index]);
   }
 

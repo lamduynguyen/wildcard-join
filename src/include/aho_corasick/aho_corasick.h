@@ -21,7 +21,7 @@
 
 namespace aho_corasick {
 
-class TextParserIterator;
+struct TextParserIterator;
 
 struct PatternIndexType {
   u32 pattern_id;
@@ -83,7 +83,7 @@ class AhoCorasick {
   void BuildSuffixLink();
 
  private:
-  friend class TextParserIterator;
+  friend struct TextParserIterator;
 
   FRIEND_TEST(TestAhoCorasick, SingleByteUnicode);
   FRIEND_TEST(TestAhoCorasick, MultiByteUnicode);

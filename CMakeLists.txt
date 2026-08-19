@@ -25,6 +25,16 @@ option(NATIVE_ARCH "Compile with -march=native" OFF)
 
 add_library(prototype_flags INTERFACE)
 target_compile_options(prototype_flags INTERFACE -fasynchronous-unwind-tables)
+
+# On prototype_flags and not on CMAKE_CXX_FLAGS, so these apply to our code and
+# not to croaring, fmt, TBB or googletest. Warning clean third party source is
+# not something we can promise or fix.
+target_compile_options(prototype_flags INTERFACE -Wall -Wextra)
+option(WERROR "Turn warnings into errors, on in CI" OFF)
+if(WERROR)
+  target_compile_options(prototype_flags INTERFACE -Werror)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(prototype_flags INTERFACE -Wno-stringop-overflow)
 endif()

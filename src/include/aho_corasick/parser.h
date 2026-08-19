@@ -60,8 +60,8 @@ struct TextParserIterator {
   TextParserIterator(const char *text, size_t text_len, const PatternAnalyzer *build_side, const AhoCorasick *trie)
       : text(text),
         text_len(text_len),
-        build_side(build_side),
         automaton(trie),
+        build_side(build_side),
         text_offset(0),
         codepoint_idx(0),
         ptr(trie->GetRoot()),

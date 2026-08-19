@@ -78,7 +78,13 @@ class N256 {
     needRestart = (startRead != versionLock.load());
   }
 
-  void insertAndUnlock(uint64_t v, N256 *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key,
+  // keyParent is unused. In a full ART it is the byte the parent uses to
+  // point at this node, needed when an insert grows the node and the parent
+  // pointer has to be rewritten. This trie is N256 only and never grows, so
+  // nothing reads it. Kept in the signature rather than deleted, since a node
+  // type that does grow would want it back.
+  void insertAndUnlock(uint64_t v, N256 *parentNode, uint64_t parentVersion, [[maybe_unused]] uint8_t keyParent,
+                       uint8_t key,
                        std::function<N256 *()> generateVal, bool &needRestart) {
     if (parentNode != nullptr) {
       parentNode->readUnlockOrRestart(parentVersion, needRestart);

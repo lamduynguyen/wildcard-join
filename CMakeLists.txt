@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.24)
+# 3.25 and not 3.24, for the SYSTEM target property that cmake/Dependencies.cmake
+# uses to keep warnings from fetched dependencies out of our build. Ubuntu
+# 24.04 ships 3.28.3 and macOS homebrew is well past it.
+cmake_minimum_required(VERSION 3.25)
 
 project(StringPrototype VERSION 0.1 LANGUAGES CXX)
 
@@ -36,8 +39,8 @@ message(STATUS "prototype: build type ${CMAKE_BUILD_TYPE}, NATIVE_ARCH=${NATIVE_
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
-find_package(fmt REQUIRED)
-find_package(TBB REQUIRED)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(Dependencies)
 
 add_subdirectory(third_party/croaring)
 
@@ -61,7 +64,7 @@ target_include_directories(ahocorasick PUBLIC src/include)
 # ---------------------------------------------------------------------------
 option(ENABLE_TESTING "Build tests" OFF)
 if(ENABLE_TESTING)
-  find_package(GTest REQUIRED)
+  wj_provide_googletest()
   enable_testing()
   add_subdirectory(test)
 endif()

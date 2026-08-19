@@ -14,23 +14,36 @@ time on it: parts of it work today and parts of it do not.
 | `src/` | The wildcard join prototype. Skeleton and segment decomposition of `LIKE` patterns, the positional constraint checks, the ART index and the matcher. |
 | `test/` | GoogleTest suites for the matcher and the automaton. |
 | `third_party/croaring/` | Vendored CRoaring 1.3.0, single header amalgamation. |
-| `reproducibility/` | Schema, load scripts and the benchmark queries for the HackerNews evaluation. |
+| `cmake/Dependencies.cmake` | Pinned fmt, oneTBB and GoogleTest, with the `USE_SYSTEM_DEPS` escape hatch. |
+| `reproducibility/` | `fetch_dataset.sh`, schema, load scripts and the benchmark queries for the HackerNews evaluation. |
 | `bin/` | The three system binaries the evaluation compares, plus `SHA256SUMS`. |
 | `docs/umbra-binaries.md` | What those binaries are, what they need, and what cannot be rebuilt. |
 
 ## Build
 
 ```
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
+cmake --preset release
+cmake --build --preset release -j"$(nproc)"
+ctest --preset release
 ```
 
-Needs a C++23 compiler, CMake 3.24 or newer, and `fmt` and `oneTBB` findable by
-`find_package`. On Ubuntu 24.04 that is `libfmt-dev` and `libtbb-dev`. Add
-`-DENABLE_TESTING=ON` for the test suite, which also needs `libgtest-dev`.
+Needs a C++23 compiler and CMake 3.25 or newer. fmt 11.0.2, oneTBB 2021.13.0
+and GoogleTest 1.15.2 are fetched at configure time and checked against a
+SHA256, so you do not need them installed and you get the same versions we
+did. The first configure of a given build directory needs network, and only
+that one.
 
-There is no pinning yet, so the versions you get are the host's. See
-`THIRD_PARTY_LICENSES.md` for what server3 resolves them to.
+`-DUSE_SYSTEM_DEPS=ON` goes back to `find_package` instead, which is the right
+choice for a distro package or a machine with no network. On Ubuntu 24.04 that
+wants `libfmt-dev`, `libtbb-dev` and `libgtest-dev`. `THIRD_PARTY_LICENSES.md`
+has the versions that resolves to on server3.
+
+`release`, `debug` and `release-asan` presets are in `CMakePresets.json`. Only
+`release` turns on `-march=native`, since a build with it on is not comparable
+across machines.
+
+On server3, from a clean clone: 17 seconds to configure, 2 minutes to build
+with `-j8`, tests in under a second.
 
 ## The binaries in `bin/`
 
@@ -62,15 +75,15 @@ cd bin && sha256sum -c SHA256SUMS
 
 ## Dataset
 
-The HackerNews dataset lives at
-https://huggingface.co/datasets/lamduynguyen/hackernews. `reproducibility/README.md`
-has the current instructions.
+```
+cd reproducibility && ./fetch_dataset.sh
+```
 
-Those instructions are not yet reproducible: the URL carries no revision and no
-checksums, and two of the three CSV files they ask you to place in `dataset/`
-are neither in this repository nor generatable from anything in it. A
-`fetch_dataset.sh` with a pinned revision and per file checksums is an open
-item.
+Downloads the three CSV files from
+https://huggingface.co/datasets/lamduynguyen/hackernews at a pinned revision,
+checks each against a SHA256 and counts the rows. About 1.5 GB, 1m22s on
+server3. `reproducibility/README.md` has the load instructions and what the
+queries do.
 
 ## State of this artifact
 
@@ -79,20 +92,23 @@ worse than reading them here.
 
 Works today:
 
-* The prototype configures and builds from the repository root.
+* The prototype configures and builds from the repository root, with pinned
+  dependencies, on a machine that has none of them installed.
 * The test suite builds and passes.
 * `bin/duckdb` runs and is a verifiable upstream release.
 * `bin/SHA256SUMS` lets you check all three binaries.
+* The dataset fetches at a pinned revision with checksums, loads into DuckDB,
+  and all five benchmark queries run against it.
 
 Does not work today:
 
-* `bin/umbraOurs` and `bin/umbraNaive` do not run on Ubuntu 24.04.
-* The dataset cannot be fetched reproducibly, and two of the three input files
-  are not obtainable at all.
+* `bin/umbraOurs` and `bin/umbraNaive` do not run on Ubuntu 24.04, so two of
+  the three systems in the evaluation cannot be executed at all.
 * There is no `run_all.sh`, so there is no single command that goes from a
   clean clone to the numbers in the paper, and no statement of how long a full
   run takes.
-* Dependencies are not pinned, so two machines build two different things.
+* DuckDB does not get the same warm up protocol Umbra does, so the two are not
+  yet compared on equal terms.
 * There is no CI, so none of the above is caught automatically.
 
 Each of these is tracked on the issues in this repository. Work lands here

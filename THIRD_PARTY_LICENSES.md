@@ -17,27 +17,31 @@ The CRoaring copy is the single header amalgamation, so `roaring.h`,
 and are not edited here. `third_party/croaring/CMakeLists.txt` is ours. The
 version is the `ROARING_VERSION` define in `third_party/croaring/roaring.h`.
 
-## Resolved by find_package at configure time
+## Fetched at configure time, pinned
 
-| Component | License | How it is found |
-| - | - | - |
-| [{fmt}](https://github.com/fmtlib/fmt) | MIT | `find_package(fmt REQUIRED)` |
-| [oneTBB](https://github.com/uxlfoundation/oneTBB) | Apache-2.0 | `find_package(TBB REQUIRED)` |
-| [GoogleTest](https://github.com/google/googletest) | BSD-3-Clause | `find_package(GTest REQUIRED)`, only when `ENABLE_TESTING=ON` |
+`cmake/Dependencies.cmake` fetches these at the versions below and checks each
+tarball against a SHA256. They are the same versions tamnd/prototype-string
+pins, so the two repos build against the same code.
 
-There is no pinning yet, so the version you get is whatever the host has. On
-server3, Ubuntu 24.04.4:
+| Component | Version | License | SHA256 of the release tarball |
+| - | - | - | - |
+| [{fmt}](https://github.com/fmtlib/fmt) | 11.0.2 | MIT | `6cb1e6d3...3f7c027f` |
+| [oneTBB](https://github.com/uxlfoundation/oneTBB) | 2021.13.0 | Apache-2.0 | `3ad5dd08...c94133e1` |
+| [GoogleTest](https://github.com/google/googletest) | 1.15.2 | BSD-3-Clause | `7b42b4d6...27f02926` |
+
+GoogleTest is only fetched when `ENABLE_TESTING=ON`. A library only build has
+to work on a machine that has no gtest at all.
+
+`USE_SYSTEM_DEPS=ON` switches all three back to `find_package`, which is what
+the build did before and is the right choice for a distro package or a machine
+with no network. Taking that path means the versions are the host's. On
+server3, Ubuntu 24.04.4, that resolves to:
 
 | Component | Package | Version |
 | - | - | - |
 | fmt | `libfmt-dev` | 9.1.0+ds1-2 |
 | oneTBB | `libtbb-dev` | 2021.11.0-2ubuntu2 |
 | GoogleTest | `libgtest-dev` | 1.14.0-1 |
-
-Pinning these with `FetchContent` and a SHA256 per release tarball is an open
-item on the tracking issue. Until that lands, a build on a machine with
-different distro versions is a different build, and this table is a snapshot
-rather than a specification.
 
 ## Binaries in `bin/`
 

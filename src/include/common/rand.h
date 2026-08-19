@@ -2,12 +2,7 @@
 
 #include "common/typedef.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdlib>
 #include <random>
-#include <utility>
-#include <vector>
 
 class MersenneTwister {
  private:
@@ -23,17 +18,6 @@ class MersenneTwister {
  public:
   explicit MersenneTwister(u64 seed = 19650218ULL);
   auto Rand() -> u64;
-};
-
-class ZipfGenerator {
- private:
-  double norm_c_;                 // Normalization constant
-  int n_elements_;                // Number of elements
-  std::vector<double> sum_prob_;  // pre calculate the sum probabilities
- public:
-  ZipfGenerator(double theta, int n_elements);
-  auto Rand() -> int;
-  auto NoElements() -> int;
 };
 
 class RandomGenerator {

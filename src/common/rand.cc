@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <cassert>
-#include <cstdlib>
 
 static std::atomic<u64> mt_counter = 0;
 static thread_local MersenneTwister mt_generator;
@@ -44,39 +43,6 @@ auto MersenneTwister::Rand() -> u64 {
 
   return x;
 }
-
-ZipfGenerator::ZipfGenerator(double theta, int n_elements) : n_elements_(n_elements) {
-  norm_c_ = 0;
-  for (auto i = 1; i <= n_elements; ++i) { norm_c_ += 1.0 / pow(static_cast<double>(i), theta); }
-  norm_c_ = 1.0 / norm_c_;
-  sum_prob_.reserve(n_elements + 1);
-  sum_prob_[0] = 0;
-  for (int i = 1; i <= n_elements; ++i) {
-    sum_prob_[i] = sum_prob_[i - 1] + norm_c_ / pow(static_cast<double>(i), theta);
-  }
-}
-
-auto ZipfGenerator::Rand() -> int {
-  double z;
-
-  // Pull a uniform random number (0 < z < 1)
-  do { z = drand48(); } while ((z == 0) || (z == 1));
-
-  // Map z to the value
-  int low  = 1;
-  int high = n_elements_;
-  while (low <= high) {
-    auto mid = (low + high) / 2;
-    if (sum_prob_[mid] >= z) {
-      high = mid - 1;
-    } else {
-      low = mid + 1;
-    }
-  }
-  return low;
-}
-
-auto ZipfGenerator::NoElements() -> int { return n_elements_; }
 
 auto RandomGenerator::GetRandU64(u64 min, u64 max) -> u64 {
   const u64 rand = min + (mt_generator.Rand() % (max - min));

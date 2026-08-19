@@ -14,7 +14,18 @@ static constexpr uint8_t NULL_TERMINATOR = '\0';
 namespace ART {
 
 class Tree;
-struct Leaf;
+
+// Leaf only stores auxIndex; key bytes are fully encoded in the trie path.
+// literal_len lives in AhoCorasick::literal_map_ alongside the bitmap.
+// Defined before N256 because N256::deleteNode has to delete one.
+struct Leaf {
+  uint64_t auxIndex;
+
+  static Leaf *MakeLeaf(uint64_t auxIndex) { return new Leaf(auxIndex); }
+
+ private:
+  explicit Leaf(uint64_t auxIndex) : auxIndex(auxIndex) {}
+};
 
 class N256 {
  protected:
@@ -29,7 +40,8 @@ class N256 {
   N256(N256 &&)      = delete;
 
   std::atomic<uint64_t> versionLock{0b10};  // 63b version | 1b lock
-  uint8_t count       = 0;
+  uint16_t count      = 0;  // up to 256 children, so uint8_t wraps to 0 on a full node
+
   bool isCodePointEnd = false;
   N256 *children[256];
   N256 *links[];
@@ -130,20 +142,12 @@ class N256 {
   }
 
   static void deleteNode(N256 *node) {
-    if (N256::isLeaf(node)) { return; }
+    if (N256::isLeaf(node)) {
+      delete N256::getLeaf(node);
+      return;
+    }
     operator delete(static_cast<N256 *>(node));
   }
-};
-
-// Leaf only stores auxIndex — key bytes are fully encoded in the trie path.
-// literal_len lives in AhoCorasick::literal_map_ alongside the bitmap.
-struct Leaf {
-  uint64_t auxIndex;
-
-  static Leaf *MakeLeaf(uint64_t auxIndex) { return new Leaf(auxIndex); }
-
- private:
-  explicit Leaf(uint64_t auxIndex) : auxIndex(auxIndex) {}
 };
 
 }  // namespace ART

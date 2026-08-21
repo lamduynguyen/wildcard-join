@@ -24,15 +24,21 @@ class Tree {
   inline void yield(int count) const {
     if (count > 3) sched_yield();
 #if defined(__x86_64__) || defined(__i386__)
-    else           asm volatile("pause");
+    else
+      asm volatile("pause");
 #elif defined(__aarch64__) || defined(__arm__)
-    else           asm volatile("yield");
+    else
+      asm volatile("yield");
 #else
-    else           sched_yield();
+    else
+      sched_yield();
 #endif
   }
 
-  inline uint8_t getNextChar(const char *keyword, uint64_t keywordLen, bool mustAppendNull, uint64_t index) {
+  // mustAppendNull is only read by the assert, so it is unused in a release
+  // build and -Wunused-parameter says so.
+  inline uint8_t getNextChar(const char *keyword, uint64_t keywordLen, [[maybe_unused]] bool mustAppendNull,
+                             uint64_t index) {
     return (index >= keywordLen) ? (assert(mustAppendNull), NULL_TERMINATOR) : static_cast<uint8_t>(keyword[index]);
   }
 

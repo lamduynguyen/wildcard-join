@@ -1,0 +1,227 @@
+name: ci
+
+# This repo is the URL that goes in the Artifact Availability block, so the
+# thing CI has to protect is not "does it still compile for us", it is "does it
+# still work for someone who has never seen it before". Every job below models
+# some part of a reviewer's machine, and each one exists because the state of
+# the repo before M0 failed that part.
+#
+# Not here yet: the nightly artifact-e2e job from the M1 checklist, which is
+# supposed to clone into a clean container, fetch the dataset and run
+# run_all.sh --quick. run_all.sh does not exist, it is an open M6 item, so the
+# job would be asserting on a script it cannot call. It goes in when M6 lands.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A reviewer clones this over https with no key, no token and no membership
+  # of the group. Refusing the ssh protocol outright is the cheapest way to
+  # keep it that way, because the failure mode is quiet: an ssh URL in a
+  # submodule or a remote works fine for everyone who has already got access
+  # and hands everyone else a permission denied. tamnd/prototype-string had
+  # exactly that, a third_party/succinct submodule on a git@github.com URL, and
+  # nobody noticed for as long as the only people cloning were the authors.
+  #
+  # This job pays the full cost of the clone, which is the point. bin/ is 169 MB
+  # of prebuilt binaries checked straight into git, so this is also the job that
+  # will show how slow the artifact is to obtain. Fixing that is M0b, not CI's
+  # business, and hiding it behind a sparse checkout here would remove the only
+  # signal we have.
+  clone-anonymous:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GIT_TERMINAL_PROMPT: 0
+      GIT_SSH_COMMAND: /bin/false
+    steps:
+      - name: Clone over https with the ssh protocol disabled
+        run: |
+          git -c protocol.ssh.allow=never \
+              clone --recurse-submodules \
+              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+              "$RUNNER_TEMP/anon"
+          cd "$RUNNER_TEMP/anon"
+          git -c protocol.ssh.allow=never fetch origin ${{ github.sha }}
+          git checkout --detach ${{ github.sha }}
+          git -c protocol.ssh.allow=never submodule update --init --recursive
+      - name: Configure and build the library from that clone
+        run: |
+          cd "$RUNNER_TEMP/anon"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+
+  # A library only build must not need googletest. Before M0 it did, because
+  # find_package(GTest REQUIRED) ran unconditionally and had nothing to do with
+  # whether tests were being built. The assertion is on
+  # compile_commands.json rather than on the configure log, because the log
+  # prints the build directory path and a path containing the string gtest
+  # would satisfy a naive grep of it.
+  library-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure without ENABLE_TESTING
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Assert nothing on the compile line mentions gtest
+        run: |
+          n=$(grep -ci gtest build/compile_commands.json || true)
+          echo "gtest references in compile_commands.json: $n"
+          test "$n" -eq 0
+      - run: cmake --build build -j"$(nproc)"
+
+  # The other half of "build without googletest": an image where it genuinely
+  # is not installed, building the tests anyway. The ubuntu-latest runner image
+  # carries a pile of preinstalled development packages, so a green build there
+  # says nothing about a clean machine. This container has a compiler, cmake and
+  # git and that is all, which means fmt, TBB and googletest all have to come
+  # from the pinned FetchContent path in cmake/Dependencies.cmake.
+  no-system-deps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: ubuntu:24.04
+    steps:
+      - name: Install only a compiler, cmake and git
+        run: |
+          apt-get update
+          apt-get install -y build-essential cmake git ca-certificates
+          echo "installed packages that would satisfy find_package:"
+          dpkg -l | grep -E 'libfmt-dev|libtbb-dev|libgtest-dev' || echo "  none, which is the point"
+      - uses: actions/checkout@v5
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=ON
+      - run: cmake --build build -j"$(nproc)"
+      - run: ctest --test-dir build --output-on-failure
+
+  build-and-test:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - name: linux-clang
+            os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+          # macos-14 and later are arm64, which is the architecture the code was
+          # written on. One job and not a matrix of its own, because a macOS
+          # runner minute is billed at ten times a Linux one.
+          - name: macos-arm64
+            os: macos-14
+            cc: clang
+            cxx: clang++
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Record the toolchain
+        run: |
+          cmake --version | head -1
+          $CXX --version | head -1
+      # WERROR is on here and nowhere else. The sanitizer and container jobs
+      # compile the same source with the same warning set, so failing them on a
+      # warning too would only mean the same warning is reported five times.
+      - run: cmake --preset release -DWERROR=ON
+      - run: cmake --build --preset release --parallel 4
+      - run: ctest --preset release
+
+  # USE_SYSTEM_DEPS=ON is the escape hatch for a machine with no network and
+  # for anyone packaging this. It is also the only job that ever compiles
+  # against a distro fmt and a distro TBB, which is what the build did before
+  # the versions were pinned, so it is the regression test for that path still
+  # working rather than bit rotting.
+  system-deps:
+    runs-on: ubuntu-latest
+    # Borrowed wholesale from tamnd/prototype-string, where an unbounded apt
+    # step sat for sixteen minutes with no output and no failure and blocked the
+    # whole run until someone cancelled it by hand. A step with no timeout waits
+    # six hours before GitHub gives up.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      # timeout(1) around each attempt, because the Acquire timeouts do not cut
+      # a stalled fetch on their own. They measure inactivity, so a mirror that
+      # dribbles one byte every few seconds never trips them, and that is what
+      # the sixteen minute stall looked like in the log. timeout goes under sudo
+      # and not over it, so the signal reaches apt-get instead of killing sudo
+      # and leaving apt holding the lock.
+      - name: Install fmt, TBB and googletest from apt
+        timeout-minutes: 15
+        run: |
+          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          for attempt in 1 2 3; do
+            if sudo timeout 150 apt-get $apt_opts update; then
+              break
+            fi
+            echo "apt-get update did not finish on attempt $attempt"
+            sleep 10
+          done
+          # Runs even if every update attempt was cut short. Partial index lists
+          # usually still resolve these three packages, and when they do not the
+          # error is apt's own rather than one this script invented.
+          sudo timeout 300 apt-get $apt_opts install -y libfmt-dev libtbb-dev libgtest-dev
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=ON -DUSE_SYSTEM_DEPS=ON
+      - run: cmake --build build -j"$(nproc)"
+      - run: ctest --test-dir build --output-on-failure
+
+  # The ART here allocates every Leaf with new and tags the pointer's high bit,
+  # and the same node type is walked concurrently under optimistic locks. Both
+  # of those are the kind of thing a passing ctest run says nothing about. This
+  # is the only job that would notice a leak or a use after free.
+  asan-lsan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ASAN_OPTIONS: detect_leaks=1
+    steps:
+      - uses: actions/checkout@v5
+      - run: cmake --preset release-asan
+      - run: cmake --build --preset release-asan --parallel 4
+      - run: ctest --preset release-asan
+
+  # clang-format output changes between releases, so the version is pinned here
+  # and in scripts/format.sh. Without a pin, the day the runner image bumps its
+  # clang every open PR goes red on files nobody in it touched.
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: pipx install clang-format==18.1.8
+      - run: scripts/format.sh --check
+
+  # Pinned for the same reason as clang-format, and more so: the check set
+  # grows with every release, so an unpinned clang-tidy turns somebody else's
+  # unrelated PR red on the day the runner image moves. What is enabled, and
+  # the reasoning behind every one of the five checks that is not, is in
+  # .clang-tidy.
+  #
+  # CC and CXX are forced to clang because clang-tidy reads the compile
+  # commands cmake writes and a gcc command line carries flags it does not
+  # understand. Nothing is linked here, the build step in tidy.sh only exists
+  # to generate the headers the fetched dependencies produce at configure time.
+  clang-tidy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v5
+      - run: pipx install clang-tidy==18.1.8
+      - run: scripts/tidy.sh

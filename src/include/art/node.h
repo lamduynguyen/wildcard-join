@@ -1,11 +1,12 @@
 #ifndef ART_OPTIMISTIC_LOCK_COUPLING_N_H
 #define ART_OPTIMISTIC_LOCK_COUPLING_N_H
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
-#include <cstring>
 #include <functional>
+#include <iterator>
 #include <utility>
 
 using TupleID                            = uint64_t;
@@ -32,7 +33,12 @@ class N256 {
   friend class Tree;
 
   N256(bool isCodePointEnd) : isCodePointEnd(isCodePointEnd) {
-    memset(children, NULL_TERMINATOR, sizeof(children));
+    // fill_n and not memset. NULL_TERMINATOR is a key byte, and using it as a
+    // fill byte only produced null pointers because it happens to be zero, so
+    // the line read as if the array were being filled with terminators. It also
+    // needed a cast through void * to get past the pointer to pointer
+    // conversion. This says what it means and emits the same stores.
+    std::fill_n(children, std::size(children), nullptr);
     if (isCodePointEnd) { links[0] = links[1] = nullptr; }
   }
 
@@ -40,7 +46,7 @@ class N256 {
   N256(N256 &&)      = delete;
 
   std::atomic<uint64_t> versionLock{0b10};  // 63b version | 1b lock
-  uint16_t count      = 0;  // up to 256 children, so uint8_t wraps to 0 on a full node
+  uint16_t count = 0;                       // up to 256 children, so uint8_t wraps to 0 on a full node
 
   bool isCodePointEnd = false;
   N256 *children[256];
@@ -69,7 +75,7 @@ class N256 {
   void writeUnlock() { versionLock.fetch_add(0b1); }
 
   uint64_t readLockOrRestart(bool &needRestart) const {
-    uint64_t version = versionLock.load();
+    const uint64_t version = versionLock.load();
     if (isLocked(version)) { needRestart = true; }
     return version;
   }
@@ -78,8 +84,13 @@ class N256 {
     needRestart = (startRead != versionLock.load());
   }
 
-  void insertAndUnlock(uint64_t v, N256 *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key,
-                       std::function<N256 *()> generateVal, bool &needRestart) {
+  // keyParent is unused. In a full ART it is the byte the parent uses to
+  // point at this node, needed when an insert grows the node and the parent
+  // pointer has to be rewritten. This trie is N256 only and never grows, so
+  // nothing reads it. Kept in the signature rather than deleted, since a node
+  // type that does grow would want it back.
+  void insertAndUnlock(uint64_t v, N256 *parentNode, uint64_t parentVersion, [[maybe_unused]] uint8_t keyParent,
+                       uint8_t key, const std::function<N256 *()> &generateVal, bool &needRestart) {
     if (parentNode != nullptr) {
       parentNode->readUnlockOrRestart(parentVersion, needRestart);
       if (needRestart) return;
@@ -94,37 +105,47 @@ class N256 {
   // Aho-Corasick: suffix and output links
   auto isTerminalNode() -> bool { return children[NULL_TERMINATOR] != nullptr; }
 
-  void  setSuffixLink(N256 *n) { links[0] = n; }
-  N256 *getSuffixLink() const  { return links[0]; }
-  void  setOutputLink(N256 *n) { links[1] = n; }
-  N256 *getOutputLink() const  { return links[1]; }
+  void setSuffixLink(N256 *n) { links[0] = n; }
+
+  N256 *getSuffixLink() const { return links[0]; }
+
+  void setOutputLink(N256 *n) { links[1] = n; }
+
+  N256 *getOutputLink() const { return links[1]; }
 
   // Leaf tagging (high bit of pointer)
   static Leaf *getLeaf(const N256 *n) {
     return reinterpret_cast<Leaf *>(reinterpret_cast<uintptr_t>(n) & ((static_cast<uint64_t>(1) << 63) - 1));
   }
-  static bool isLeaf(const N256 *n) {
-    return (reinterpret_cast<uint64_t>(n) >> 63) == 1;
-  }
+
+  static bool isLeaf(const N256 *n) { return (reinterpret_cast<uint64_t>(n) >> 63) == 1; }
+
   static N256 *setLeaf(Leaf *leaf) {
     return reinterpret_cast<N256 *>(reinterpret_cast<uintptr_t>(leaf) | (static_cast<uint64_t>(1) << 63));
   }
 
   // Child access
-  bool  change(uint8_t key, N256 *val) { children[key] = val; return true; }
-  void  insert(uint8_t key, N256 *val) { children[key] = val; count++; }
+  bool change(uint8_t key, N256 *val) {
+    children[key] = val;
+    return true;
+  }
+
+  void insert(uint8_t key, N256 *val) {
+    children[key] = val;
+    count++;
+  }
+
   N256 *getChild(const uint8_t k) const { return children[k]; }
 
   uint64_t getChildren(uint8_t start, uint8_t end, std::tuple<uint8_t, N256 *> *children,
                        uint32_t &childrenCount) const {
   restart:
     bool needRestart = false;
-    uint64_t v       = readLockOrRestart(needRestart);
+    const uint64_t v = readLockOrRestart(needRestart);
     if (needRestart) goto restart;
     childrenCount = 0;
     for (unsigned i = start; i <= end; i++) {
-      if (this->children[i] != nullptr)
-        children[childrenCount++] = std::make_tuple(i, this->children[i]);
+      if (this->children[i] != nullptr) children[childrenCount++] = std::make_tuple(i, this->children[i]);
     }
     readUnlockOrRestart(v, needRestart);
     if (needRestart) goto restart;

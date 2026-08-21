@@ -76,9 +76,7 @@ auto Skeleton::SpecialMatchEmptyPattern(const char *p, u32 plen, const char *s, 
 // same codepoint; bounding by max_underscore_cnt alone evicts valid entries.
 static inline auto LruCapForSegment(const Skeleton::Segment &seg) -> u64 {
   u64 cap = seg.max_underscore_cnt + 1;
-  if (!seg.literal_offset.empty()) {
-    cap = std::max<u64>(cap, static_cast<u64>(seg.literal_offset.back()) + 1);
-  }
+  if (!seg.literal_offset.empty()) { cap = std::max<u64>(cap, static_cast<u64>(seg.literal_offset.back()) + 1); }
   return cap;
 }
 
@@ -99,7 +97,7 @@ auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_seg
   const auto &segment  = seg_[curr_segment_idx];
   auto next_sket_index = curr_segment_idx + 1;
 
-  if (next_sket_index < seg_.size()) { return true; }   // more segments remain
+  if (next_sket_index < seg_.size()) { return true; }  // more segments remain
 
   // Even with a trailing `%`, the trailing `_`s impose a minimum-length tail
   // constraint: there must be ≥ suffix_underscore_cnt codepoints between the
@@ -132,7 +130,8 @@ auto Matcher::TryMatchingLiteral(const Skeleton &sket, const MatchingOutputType 
   // - Non-first literal -- previous literal must exist at the exact expected gap (diff)
   if (segment.IsFirstLiteral(pat_pos)) {
     // With prefix %: can start anywhere. Without: must align exactly with text start.
-    if (!segment.has_prefix_percent && !(segment_idx_ == 0 && ac_match.text_start_pos == pat_pos)) { return false; }
+    const bool anchored_at_text_start = segment_idx_ == 0 && ac_match.text_start_pos == pat_pos;
+    if (!segment.has_prefix_percent && !anchored_at_text_start) { return false; }
   } else {
     const auto diff = ac_match.text_start_pos - pat_pos;
     if (!Contain(diff)) { return false; }

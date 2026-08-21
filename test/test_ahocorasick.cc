@@ -96,7 +96,7 @@ TEST(TestAhoCorasick, SingleByteUnicode) {
   // ---- Terminal nodes ----
   for (const auto &pat : dataset) {
     auto cur = root;
-    for (char8_t c : pat) {  // iterate over char8_t
+    for (const char8_t c : pat) {  // iterate over char8_t
       cur = cur->getChild(static_cast<uint8_t>(c));
       ASSERT_NE(cur, nullptr);
     }
@@ -272,7 +272,7 @@ TEST(TestAhoCorasick, MultiByteUnicode) {
   for (const auto &pat : dataset) {
     auto cur = root;
     std::string bytes_debug;
-    for (char8_t c : pat) {
+    for (const char8_t c : pat) {
       cur = cur->getChild(static_cast<uint8_t>(c));
       ASSERT_NE(cur, nullptr);
       bytes_debug += static_cast<char>(c);  // debug output

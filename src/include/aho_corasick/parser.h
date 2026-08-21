@@ -138,12 +138,18 @@ struct TextParserIterator {
   std::vector<u32> dirty_list_;
 
   /**
-   * @brief Advance the automaton by one code point and return all AC matches ending here.
-   * Updates text_offset and codepoint_idx.
+   * @brief Advance the automaton by one code point and overwrite `out` with
+   * every AC match ending here. Updates text_offset and codepoint_idx.
+   *
+   * Fills a caller-owned buffer rather than returning one, so the hot path can
+   * hand it the same buffer on every code point and keep the capacity.
    */
-  auto ContinueParseText() -> OutputEmitType;
+  void ContinueParseText(OutputEmitType &out);
 
   void AppendResult(ART::N256 *leaf, size_t cp_len, OutputEmitType &out_result) const;
+
+  // Reused by IterateOneCodePoint, once per code point per row.
+  OutputEmitType emit_buffer_;
 };
 
 }  // namespace aho_corasick

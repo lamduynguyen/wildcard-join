@@ -44,9 +44,10 @@ void TextParserIterator::ResetText(const char *next_text, size_t next_text_len) 
 
 auto TextParserIterator::ParseText() -> OutputEmitType {
   OutputEmitType result;
+  OutputEmitType per_codepoint;
   while (CanAdvanceOneCodePoint()) {
-    auto matches = ContinueParseText();
-    result.merge(matches);
+    ContinueParseText(per_codepoint);
+    result.insert(result.end(), per_codepoint.begin(), per_codepoint.end());
   }
   return result;
 }
@@ -54,9 +55,9 @@ auto TextParserIterator::ParseText() -> OutputEmitType {
 template <typename BitMap>
 void TextParserIterator::IterateOneCodePoint(BitMap &result) {
   const auto end_offset = text_offset;
-  const auto ac_matches = ContinueParseText();
+  ContinueParseText(emit_buffer_);
 
-  for (const auto &match : ac_matches) {
+  for (const auto &match : emit_buffer_) {
     const auto pat_id = match.pattern_index.pattern_id;
     if (result[pat_id]) { continue; }
 
@@ -82,8 +83,8 @@ void TextParserIterator::IterateOneCodePoint(BitMap &result) {
   }
 }
 
-auto TextParserIterator::ContinueParseText() -> OutputEmitType {
-  OutputEmitType result;
+void TextParserIterator::ContinueParseText(OutputEmitType &result) {
+  result.clear();
 
   const auto *cp     = text + text_offset;
   const auto cp_info = umbra::Utf8::readCodePoint(cp, text + text_len);
@@ -113,7 +114,17 @@ auto TextParserIterator::ContinueParseText() -> OutputEmitType {
 
   text_offset += cp_len;
   codepoint_idx += 1;
-  return result;
+
+#ifndef NDEBUG
+  // This used to be a hash set, and dropping it to a vector is only safe if
+  // one code point cannot emit the same match twice. The argument is in the
+  // comment on OutputEmitType. This is that argument as an assertion, so it
+  // gets checked on every debug and sanitizer run instead of being trusted.
+  // Quadratic, but the emit list at one code point is a handful of entries.
+  for (size_t i = 0; i < result.size(); i++) {
+    for (size_t j = i + 1; j < result.size(); j++) { assert(!(result[i] == result[j])); }
+  }
+#endif
 }
 
 void TextParserIterator::AppendResult(ART::N256 *leaf, size_t cp_len, OutputEmitType &out_result) const {
@@ -128,7 +139,7 @@ void TextParserIterator::AppendResult(ART::N256 *leaf, size_t cp_len, OutputEmit
 
   for (auto value : it->second.bitmap) {
     auto pattern_idx = PatternIndexType::FromUint(value);
-    out_result.emplace(pattern_idx, literal_len, match_pos);
+    out_result.emplace_back(pattern_idx, literal_len, match_pos);
   }
 }
 

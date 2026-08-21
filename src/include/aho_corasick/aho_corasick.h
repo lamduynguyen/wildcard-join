@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <memory>
-#include <unordered_set>
 #include <vector>
 
 // The test build pulls in gtest, which defines FRIEND_TEST.  A library build
@@ -48,17 +47,15 @@ struct MatchingOutputType {
     return pattern_index.pattern_id == other.pattern_index.pattern_id &&
            pattern_index.start_pos == other.pattern_index.start_pos && text_start_pos == other.text_start_pos;
   }
-
-  struct Hasher {
-    std::size_t operator()(const MatchingOutputType &k) const noexcept {
-      const u64 h1 = HashFn(k.pattern_index.ToUint());
-      const u64 h2 = HashFn(k.text_start_pos);
-      return h1 ^ (h2 + 0x9e3779b97f4a7c15 + (h1 << 12) + (h1 >> 4));
-    }
-  };
 };
 
-using OutputEmitType = std::unordered_set<MatchingOutputType, MatchingOutputType::Hasher>;
+// A vector and not a hash set. The matches emitted at one code point come from
+// the terminal node plus its output link chain, which are distinct nodes, so
+// they are distinct literals, and the pattern occurrence sets of two distinct
+// literals are disjoint. Nothing can repeat, so the set was paying for a
+// dedup that had nothing to do. TextParserIterator asserts that in debug
+// builds rather than leaving it as a claim in a comment.
+using OutputEmitType = std::vector<MatchingOutputType>;
 
 // Bundles the pattern bitmap with the keyword's byte length, so Leaf no longer
 // needs to store the key.  literal_len is the length excluding the null terminator.

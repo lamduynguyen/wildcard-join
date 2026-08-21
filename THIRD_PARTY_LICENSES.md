@@ -11,6 +11,7 @@ covered at the bottom.
 | Component | Version | License | Where |
 | - | - | - | - |
 | [CRoaring](https://github.com/RoaringBitmap/CRoaring) | 1.3.0 | Apache-2.0 or MIT, at your option | `third_party/croaring/`, license text in `third_party/croaring/LICENSE` |
+| [csv-parser](https://github.com/vincentlaucsb/csv-parser) | 2.3.0 | MIT | `third_party/csv-parser/csv.h`, single header, license text in the file header |
 
 The CRoaring copy is the single header amalgamation, so `roaring.h`,
 `roaring.hh` and `roaring.cc` are generated files from the upstream release

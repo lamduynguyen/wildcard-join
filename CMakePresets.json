@@ -45,6 +45,15 @@
       }
     },
     {
+      "name": "release-bench",
+      "inherits": "release",
+      "displayName": "Release plus the benchmark binaries",
+      "description": "Same flags as release, with ENABLE_BENCHMARK so ac_bench gets built. Separate preset rather than a flag on release so an ordinary test run does not pay for building it.",
+      "cacheVariables": {
+        "ENABLE_BENCHMARK": "ON"
+      }
+    },
+    {
       "name": "release-tsan",
       "inherits": "base",
       "displayName": "RelWithDebInfo plus thread sanitizer",
@@ -67,6 +76,10 @@
     {
       "name": "release-asan",
       "configurePreset": "release-asan"
+    },
+    {
+      "name": "release-bench",
+      "configurePreset": "release-bench"
     },
     {
       "name": "release-tsan",
@@ -95,6 +108,11 @@
       "name": "release-asan",
       "inherits": "base",
       "configurePreset": "release-asan"
+    },
+    {
+      "name": "release-bench",
+      "inherits": "base",
+      "configurePreset": "release-bench"
     },
     {
       "name": "release-tsan",

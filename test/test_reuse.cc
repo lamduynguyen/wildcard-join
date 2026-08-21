@@ -15,7 +15,8 @@
 // All four must agree with each other and with the recursive reference
 // matcher.
 
-#include "matcher.h"
+#include "corpus.h"
+#include "probe.h"
 
 #include "aho_corasick/aho_corasick.h"
 #include "aho_corasick/parser.h"
@@ -23,6 +24,7 @@
 #include "fmt/format.h"
 #include "gtest/gtest.h"
 
+#include <cstdint>
 #include <random>
 #include <string>
 #include <string_view>
@@ -30,62 +32,11 @@
 
 namespace {
 
-using aho_corasick::AhoCorasick;
-using aho_corasick::PatternAnalyzer;
 using aho_corasick::TextParserIterator;
-
-// Owns a compiled pattern set so several probe strategies can share it.
-struct BuildSide {
-  AhoCorasick trie;
-  std::vector<std::string> patterns;
-  std::unique_ptr<PatternAnalyzer> analyzer;
-
-  explicit BuildSide(std::vector<std::string> pats) : patterns(std::move(pats)) {
-    analyzer = std::make_unique<PatternAnalyzer>(patterns, "", trie);
-    trie.BuildSuffixLink();
-  }
-};
-
-// The wildcard-only short circuit lives in the caller in every existing probe
-// loop, so it lives here too rather than inside the iterator.
-void ApplyWildcardOnly(BuildSide &b, const std::string &text, std::vector<bool> &result) {
-  for (auto idx = 0U; idx < b.patterns.size(); idx++) {
-    const auto &sket = b.analyzer->GetSkeleton(idx);
-    if (sket.IsEmpty() || sket.OnlyWildcard()) {
-      result[idx] = aho_corasick::Skeleton::SpecialMatchEmptyPattern(
-        b.patterns[idx].data(), static_cast<u32>(b.patterns[idx].size()), text.data(), text.size());
-    }
-  }
-}
-
-void Drive(BuildSide &b, TextParserIterator &iter, const std::string &text, std::vector<bool> &result) {
-  std::fill(result.begin(), result.end(), false);
-  ApplyWildcardOnly(b, text, result);
-  iter.ResetText(text.data(), text.size());
-  while (iter.CanAdvanceOneCodePoint()) {
-    iter.IterateOneCodePoint(result);
-    iter.ProcessDelayedMatching();
-  }
-}
-
-auto ProbeFresh(BuildSide &b, const std::string &text) -> std::vector<bool> {
-  std::vector<bool> result(b.patterns.size(), false);
-  ApplyWildcardOnly(b, text, result);
-  TextParserIterator iter(text.data(), text.size(), b.analyzer.get(), &b.trie);
-  while (iter.CanAdvanceOneCodePoint()) {
-    iter.IterateOneCodePoint(result);
-    iter.ProcessDelayedMatching();
-  }
-  return result;
-}
-
-auto Reference(const std::vector<std::string> &patterns, const std::string &text) -> std::vector<bool> {
-  std::vector<bool> out(patterns.size(), false);
-  for (auto idx = 0U; idx < patterns.size(); idx++) {
-    out[idx] = DuckDBMatching(text.data(), text.size(), patterns[idx].data(), patterns[idx].size());
-  }
-  return out;
-}
+using probe::BuildSide;
+using probe::Drive;
+using probe::ProbeFresh;
+using probe::Reference;
 
 void CheckReuse(const std::vector<std::string> &patterns, const std::vector<std::string> &texts) {
   BuildSide b(patterns);
@@ -203,27 +154,41 @@ TEST(TestReuse, RandomizedRowOrderIndependence) {
   static constexpr std::string_view PATTERN_ALPHABET = "ab%_";
   static constexpr std::string_view TEXT_ALPHABET    = "ab";
 
+  // Regenerate by running the test and reading the line it prints. Changing
+  // either of these is changing what the test covers, so it should show up in
+  // a diff rather than in a rerun.
+  static constexpr uint64_t EXPECTED_PATTERN_DIGEST = 0xfeabca6d88da3d99ULL;
+  static constexpr uint64_t EXPECTED_TEXT_DIGEST    = 0xbbc87eedc6c72bdeULL;
+
   std::mt19937 rng(0x5EED);
-  std::uniform_int_distribution<size_t> pat_len(1, 7);
-  std::uniform_int_distribution<size_t> txt_len(0, 9);
-  std::uniform_int_distribution<size_t> pat_chr(0, PATTERN_ALPHABET.size() - 1);
-  std::uniform_int_distribution<size_t> txt_chr(0, TEXT_ALPHABET.size() - 1);
 
   std::vector<std::string> patterns;
   patterns.reserve(200);
   for (auto i = 0U; i < 200; i++) {
-    std::string p(pat_len(rng), '\0');
-    for (auto &c : p) { c = PATTERN_ALPHABET[pat_chr(rng)]; }
+    std::string p(1 + corpus::Pick(rng, 7), '\0');
+    for (auto &c : p) { c = PATTERN_ALPHABET[corpus::Pick(rng, PATTERN_ALPHABET.size())]; }
     patterns.push_back(std::move(p));
   }
 
   std::vector<std::string> texts;
   texts.reserve(500);
   for (auto i = 0U; i < 500; i++) {
-    std::string t(txt_len(rng), '\0');
-    for (auto &c : t) { c = TEXT_ALPHABET[txt_chr(rng)]; }
+    std::string t(corpus::Pick(rng, 10), '\0');
+    for (auto &c : t) { c = TEXT_ALPHABET[corpus::Pick(rng, TEXT_ALPHABET.size())]; }
     texts.push_back(std::move(t));
   }
+
+  // The corpus is a pure function of the seed now, so these two numbers are
+  // the same on every toolchain. Printed as well as checked, because the case
+  // that matters is somebody reading them out of a CI log they cannot rerun
+  // and asking whether their local reproduction has the same 700 strings in
+  // it. If either fails, nothing below it is a result about ResetText.
+  const auto pattern_digest = corpus::Digest(patterns);
+  const auto text_digest    = corpus::Digest(texts);
+  fmt::print("corpus {} patterns {:#018x}, {} texts {:#018x}\n", patterns.size(), pattern_digest, texts.size(),
+             text_digest);
+  ASSERT_EQ(pattern_digest, EXPECTED_PATTERN_DIGEST);
+  ASSERT_EQ(text_digest, EXPECTED_TEXT_DIGEST);
 
   BuildSide b(patterns);
 

@@ -78,3 +78,87 @@ the plot data, and no `EXPECTED_RUNTIME.md`. DuckDB does not get the same warm
 up protocol Umbra does, which has to be fixed before the two are compared. The
 join experiments run at a pattern count the paper reports at n equal to 1 for
 memory, hand transcribed. Those are tracked on issue #1.
+
+
+## The golden workload file, expected/baseline_workloads.tsv
+
+The answers for the workloads in `benchmark/workload.h`, computed once by the
+recursive reference matcher and checked in. `test/test_golden.cc` reads this file
+and recomputes the same numbers with the Aho-Corasick automaton.
+
+Every other correctness test here compares one of our implementations against
+another one of ours. The fuzzer runs the automaton against the recursive matcher,
+`test_reuse` runs a reused iterator against a fresh one, the benchmark
+cross-checks all three on every run. Those catch a lot and they share one blind
+spot, which is that a change moving both sides together looks like agreement.
+This file does not move.
+
+Columns:
+
+| column | meaning |
+| - | - |
+| `name` | the workload, matching `Spec::name` in `benchmark/workload.h` |
+| `corpus_digest` | FNV-1a over the patterns then the texts, in generation order |
+| `rows` | number of probe side rows |
+| `patterns` | number of build side patterns |
+| `bytes` | total probe side bytes |
+| `pairs` | number of matching row and pattern pairs |
+| `result_digest` | FNV-1a over those pairs |
+
+The result digest is defined in `test/test_golden.cc` and the definition is the
+contract: row major, within a row in increasing pattern order, each index folded
+in as eight little endian bytes. That is a page of code in any language, which is
+the bar for a number an artifact reviewer is asked to trust.
+
+## Checking it
+
+Part of the normal test run.
+
+```
+cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=ON
+cmake --build build/release --target TestGolden
+./build/release/test/TestGolden
+```
+
+Under a second on an idle machine, six seconds on a loaded one. The regeneration
+case skips unless you ask for it.
+
+## Reading a failure
+
+The test checks the corpus first and the answers second, because they fail for
+different reasons.
+
+`corpus_digest` differs: the input is not the input this file describes, so
+nothing below it is a correctness result. Either a spec in
+`benchmark/workload.h` changed, or the generator changed, or something in the
+generator went back to depending on the standard library rather than on the seed.
+That last one is why this file could not exist before the generator was
+pinned to the seed.
+
+`corpus_digest` matches and `result_digest` differs: the input is the same and
+the answers are not. Either the matcher changed behaviour or the reference
+matcher did. `pairs` narrows it down, since a pair count that moved a long way is
+usually a whole pattern class dropping out, and a pair count that is identical
+with a different digest means the same number of matches landed on different
+rows.
+
+Neither of those is automatically a bug. Both of them are a thing that has to be
+explained in the pull request that caused it, rather than noticed six months
+later.
+
+## Regenerating
+
+Only when a spec changes, or when a behaviour change is intended and understood.
+
+```
+AC_GOLDEN_REGENERATE=1 ./build/release/test/TestGolden --gtest_filter='GoldenRegenerate.*'
+```
+
+The values come from `NljRecursiveMatch` in `test/matcher.h`, not from the
+automaton, so the file is not a recording of whatever the automaton did last
+time. That is M patterns times N rows of the slow path, which is why it takes
+minutes rather than seconds, and why it is behind an environment variable rather
+than a command line flag somebody could set by accident.
+
+Regenerating is a deliberate act. A diff to this file in a pull request should be
+read as a claim that the answers changed on purpose.

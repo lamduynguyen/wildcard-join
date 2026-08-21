@@ -1,0 +1,16 @@
+# Result sets for the 7 ac_bench workloads, computed by the
+# recursive reference matcher in benchmark/reference.h, not by the automaton
+# under test.
+#
+# Regenerate with AC_GOLDEN_REGENERATE=1 on a TestGolden run. Takes minutes.
+# See reproducibility/README.md for what the columns mean and what a change
+# to any of them implies.
+#
+# name corpus_digest rows patterns bytes pairs result_digest
+sweep_M=10	0x6b08affa22462454	10000	10	3490495	9213	0x065a444030c26a78
+sweep_M=100	0x28abf9116edfdb4e	10000	100	3489702	9259	0x1f7ae7b8a3ac97e8
+sweep_M=1k	0xa117be33187c24e7	10000	1000	3487457	9895	0xa0efb1adc73d104f
+sweep_M=10k	0x71e0382300e45577	2000	10000	697849	3272	0x8f245413986750fd
+short_text_M=1k	0x6bbc04885745208c	50000	1000	3446683	33269	0xf36281cabf57f1c7
+long_text_M=1k	0xfacf65c6cf27d2f4	1000	1000	3498782	1719	0x78be4e47d20db721
+wildcards_M=100	0x2f5f992a5ca0f0dd	2000	104	698678	5866	0xd8b61f584999a0fe

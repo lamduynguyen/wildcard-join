@@ -1,0 +1,69 @@
+cff-version: 1.2.0
+title: >-
+  Teach Your Database to LIKE Strings via Efficient Wildcard
+  Joins and Filters
+message: >-
+  If you use this software, please cite the paper it belongs
+  to.
+type: software
+license: MIT
+repository-code: "https://github.com/lamduynguyen/wildcard-join"
+abstract: >-
+  Reproducibility package for the paper. Holds the wildcard
+  join prototype, the SQL schema, load scripts and benchmark
+  queries for the HackerNews evaluation, and the three system
+  binaries the evaluation compares. The two Umbra binaries are
+  closed source and cannot be rebuilt, see
+  docs/umbra-binaries.md.
+authors:
+  - given-names: Lam-Duy
+    family-names: Nguyen
+    email: lamduy.nguyen@tum.de
+    affiliation: Technische Universitaet Muenchen
+  - given-names: Pascal
+    family-names: Ginter
+    email: pascal.ginter@tum.de
+    affiliation: Technische Universitaet Muenchen
+  - given-names: Duc-Tam
+    family-names: Nguyen
+    email: tamnd87@gmail.com
+  - given-names: Thomas
+    family-names: Neumann
+    email: neumann@in.tum.de
+    affiliation: Technische Universitaet Muenchen
+  - given-names: Viktor
+    family-names: Leis
+    email: leis@in.tum.de
+    affiliation: Technische Universitaet Muenchen
+# journal, volume, issue and year below are still the values the VLDB
+# template ships with in main.tex. They are placeholders until the paper is
+# accepted, so update them together with \vldbdoi and \vldbpages.
+preferred-citation:
+  type: article
+  title: >-
+    Teach Your Database to LIKE Strings via Efficient Wildcard
+    Joins and Filters
+  journal: Proceedings of the VLDB Endowment
+  year: 2027
+  volume: 20
+  issue: 1
+  authors:
+    - given-names: Lam-Duy
+      family-names: Nguyen
+      email: lamduy.nguyen@tum.de
+      affiliation: Technische Universitaet Muenchen
+    - given-names: Pascal
+      family-names: Ginter
+      email: pascal.ginter@tum.de
+      affiliation: Technische Universitaet Muenchen
+    - given-names: Duc-Tam
+      family-names: Nguyen
+      email: tamnd87@gmail.com
+    - given-names: Thomas
+      family-names: Neumann
+      email: neumann@in.tum.de
+      affiliation: Technische Universitaet Muenchen
+    - given-names: Viktor
+      family-names: Leis
+      email: leis@in.tum.de
+      affiliation: Technische Universitaet Muenchen

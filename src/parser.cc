@@ -2,6 +2,46 @@
 
 namespace aho_corasick {
 
+TextParserIterator::TextParserIterator(const PatternAnalyzer *build_side, const AhoCorasick *trie)
+    : text(nullptr),
+      text_len(0),
+      automaton(trie),
+      build_side(build_side),
+      text_offset(0),
+      codepoint_idx(0),
+      ptr(trie->GetRoot()),
+      queue() {
+  const auto pattern_cnt = build_side->Size();
+  instances.reserve(pattern_cnt);
+  for (auto idx = 0U; idx < pattern_cnt; idx++) {
+    const auto &sket = build_side->GetSkeleton(idx);
+    if (sket.IsEmpty() || sket.OnlyWildcard()) {
+      // No literal, so nothing is ever inserted in the trie for it and no AC
+      // hit can name it. The entry only exists to keep indices aligned.
+      instances.emplace_back(0);
+    } else {
+      instances.push_back(sket.InitializeMatcher());
+    }
+  }
+  dirty_.assign(pattern_cnt, 0);
+  dirty_list_.reserve(64);
+}
+
+void TextParserIterator::ResetText(const char *next_text, size_t next_text_len) {
+  for (auto pattern_id : dirty_list_) {
+    build_side->GetSkeleton(pattern_id).ResetMatcher(instances[pattern_id]);
+    dirty_[pattern_id] = 0;
+  }
+  dirty_list_.clear();
+  queue.Clear();
+
+  text          = next_text;
+  text_len      = next_text_len;
+  text_offset   = 0;
+  codepoint_idx = 0;
+  ptr           = automaton->GetRoot();
+}
+
 auto TextParserIterator::ParseText() -> OutputEmitType {
   OutputEmitType result;
   while (CanAdvanceOneCodePoint()) {
@@ -17,13 +57,21 @@ void TextParserIterator::IterateOneCodePoint(BitMap &result) {
   const auto ac_matches = ContinueParseText();
 
   for (const auto &match : ac_matches) {
-    const auto pat_id   = match.pattern_index.pattern_id;
-    const auto &sket    = build_side->GetSkeleton(pat_id);
-    auto &matcher       = instances[pat_id];
-    const auto &segment = sket[matcher.CurrentSegmentIdx()];
-
+    const auto pat_id = match.pattern_index.pattern_id;
     if (result[pat_id]) { continue; }
 
+    const auto &sket = build_side->GetSkeleton(pat_id);
+    auto &matcher    = instances[pat_id];
+    // Bound after the result check, not before it. A pattern that already
+    // matched has walked segment_idx_ one past the last segment, so binding
+    // sket[CurrentSegmentIdx()] first forms a reference one past the end of
+    // the segment vector. Nothing read through it, but it is still out of
+    // range and there is no reason to write it that way.
+    const auto &segment = sket[matcher.CurrentSegmentIdx()];
+
+    // Before the call, not after a successful one: TryMatchingLiteral can
+    // consume an LRU entry and still return false.
+    MarkDirty(pat_id);
     if (!matcher.TryMatchingLiteral(sket, match, codepoint_idx, queue)) { continue; }
 
     if (segment.IsLastLiteral(match.pattern_index.start_pos) &&

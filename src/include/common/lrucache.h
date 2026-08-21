@@ -46,6 +46,16 @@ class LRUCache {
 
   inline auto Size() const { return item_map_.size(); }
 
+  // Empty the cache and give it a new capacity, keeping whatever the hash map
+  // has already allocated. Assigning a freshly constructed LRUCache does the
+  // same thing logically but throws the bucket array away, and the matcher
+  // does this once per segment boundary per row.
+  inline void Reset(size_t max_size) {
+    item_list_.clear();
+    item_map_.clear();
+    max_size_ = max_size;
+  }
+
  private:
   std::list<key_value_pair_t> item_list_;
   ankerl::unordered_dense::map<key_t, list_iterator_t> item_map_;

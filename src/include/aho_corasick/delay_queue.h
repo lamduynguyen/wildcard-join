@@ -63,6 +63,16 @@ class DelayedMatchQueue {
   // @brief Returns true if the queue is empty
   inline auto Empty() const { return queue_.empty(); }
 
+  // @brief Drop everything still scheduled, for reuse on the next text.
+  //
+  // Popping in a loop rather than assigning an empty queue, because
+  // std::priority_queue keeps its container protected and assignment would
+  // release the heap array. Anything left here is a literal whose successor
+  // never arrived before the text ended, so the loop runs a handful of times.
+  inline void Clear() {
+    while (!queue_.empty()) { queue_.pop(); }
+  }
+
   // @brief Returns true if the front match is ready to be processed
   //        based on the current code point index
   inline auto FrontReady(u64 current_cp_idx) const {

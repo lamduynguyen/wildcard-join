@@ -83,6 +83,11 @@ auto Skeleton::InitializeMatcher() const -> Matcher {
   return Matcher(LruCapForSegment(seg_[0]));
 }
 
+void Skeleton::ResetMatcher(Matcher &matcher) const {
+  assert(!seg_.empty());
+  matcher.Reset(LruCapForSegment(seg_[0]));
+}
+
 /**
  * We can only satisfy the last-literal check, i.e., advance to the next segment, if:
  * - Current segment is not the last one of the skeleton, OR
@@ -152,7 +157,7 @@ auto Matcher::AdvanceNextSegment(const Skeleton &sket, u64 min_text_next_start_p
   segment_idx_++;
   min_text_start_pos_ = min_text_next_start_pos;
   if (segment_idx_ < sket.Size()) {
-    match_ = LRUCache<u64, u16>(LruCapForSegment(sket[segment_idx_]));
+    match_.Reset(LruCapForSegment(sket[segment_idx_]));
     return true;
   }
   return false;

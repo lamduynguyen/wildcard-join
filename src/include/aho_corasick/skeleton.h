@@ -39,6 +39,15 @@ class Matcher {
 
   inline auto Upsert(u64 text_pat_diff, u64 pat_cursor) { match_.Upsert(text_pat_diff, pat_cursor); }
 
+  // Put the matcher back in the state InitializeMatcher() would have left it
+  // in, without allocating a new one. Skeleton::ResetMatcher() is the caller,
+  // it is the thing that knows the capacity for segment 0.
+  inline void Reset(u64 max_size) {
+    segment_idx_        = 0;
+    min_text_start_pos_ = 0;
+    match_.Reset(max_size);
+  }
+
  private:
   u64 segment_idx_        = 0;  // The idx of the skeleton segment
   u64 min_text_start_pos_ = 0;  // The min starting offset in text that we can continue matching for seg[segment_idx]
@@ -154,6 +163,7 @@ class Skeleton {
 
   /* Skeleton utilities */
   auto InitializeMatcher() const -> Matcher;
+  void ResetMatcher(Matcher &matcher) const;
   auto ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
                         u64 text_length) const -> bool;
 

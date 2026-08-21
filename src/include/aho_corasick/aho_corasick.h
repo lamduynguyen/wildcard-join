@@ -4,7 +4,6 @@
 #include "common/typedef.h"
 #include "common/util.h"
 
-#include "gtest/gtest_prod.h"
 #include "roaring/roaring.hh"
 #include "tbb/concurrent_unordered_map.h"
 
@@ -12,6 +11,13 @@
 #include <memory>
 #include <unordered_set>
 #include <vector>
+
+// The test build pulls in gtest, which defines FRIEND_TEST.  A library build
+// must not need gtest just to parse this header, so fall back to the same
+// declaration gtest would generate.
+#ifndef FRIEND_TEST
+#define FRIEND_TEST(test_case_name, test_name) friend class test_case_name##_##test_name##_Test
+#endif
 
 namespace aho_corasick {
 
@@ -45,9 +51,8 @@ struct MatchingOutputType {
 
   struct Hasher {
     std::size_t operator()(const MatchingOutputType &k) const noexcept {
-      auto combined = (static_cast<uint64_t>(k.pattern_index.pattern_id) << 8) | k.pattern_index.start_pos;
-      u64 h1        = HashFn(combined);
-      u64 h2        = HashFn(k.text_start_pos);
+      u64 h1 = HashFn(k.pattern_index.ToUint());
+      u64 h2 = HashFn(k.text_start_pos);
       return h1 ^ (h2 + 0x9e3779b97f4a7c15 + (h1 << 12) + (h1 >> 4));
     }
   };

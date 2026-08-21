@@ -10,6 +10,7 @@
 #include "fmt/format.h"
 
 #include <algorithm>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -26,8 +27,11 @@ class Matcher {
   Matcher(u64 max_size) : match_(max_size) {}
 
   /* Matcher utilities */
+  // text and text_len are here because the leading underscores of a segment
+  // are a count of code points and the offsets they are checked against are
+  // byte offsets, so the check has to walk the text.
   auto TryMatchingLiteral(const Skeleton &sket, const MatchingOutputType &ac_match, u64 curr_cp_index,
-                          DelayedMatchQueue &delay_queue) -> bool;
+                          DelayedMatchQueue &delay_queue, const char *text, u64 text_len) -> bool;
   auto AdvanceNextSegment(const Skeleton &sket, u64 min_text_next_start_pos) -> bool;
 
   /* Misc helpers */
@@ -76,10 +80,22 @@ class Skeleton {
   struct Segment {
     std::vector<u16> literal_offset;
     ankerl::unordered_dense::map<u16, u16> lit_off_p;  // pos of an `offset` value within the above vector
+    // Underscores before the first literal and after the last one. Counts of
+    // code points, not byte distances: a `_` is one byte in the pattern but
+    // stands for one code point of any width in the text, so anything that
+    // turns these into a text offset has to walk the text. See Utf8Advance in
+    // skeleton.cc.
+    //
+    // For a segment with no literals in it, suffix_underscore_cnt holds the
+    // whole content and prefix_underscore_cnt is zero. Such segments are
+    // folded away by FoldLiteralFreeSegments before the skeleton is used.
+    u32 prefix_underscore_cnt = 0;
     u32 suffix_underscore_cnt = 0;
     u32 max_underscore_cnt    = 0;
     bool has_prefix_percent   = false;
     bool has_suffix_percent   = false;
+
+    auto HasLiteral() const -> bool { return !literal_offset.empty(); }
 
     void Insert(u16 start_pos);
     auto Contain(u16 start_pos) const -> bool;
@@ -107,7 +123,12 @@ class Skeleton {
 
       auto prev_lit_end = seg->start;
       while (auto lit = tok.NextLiteral(*seg)) {
-        const auto gap           = lit->start - prev_lit_end;
+        // Everything between two literals of a segment is unescaped `_`, one
+        // byte each, because an escaped `_` is not a delimiter and ends up
+        // inside the literal span. So this byte distance is an underscore
+        // count.
+        const auto gap = lit->start - prev_lit_end;
+        if (!match.HasLiteral()) { match.prefix_underscore_cnt = gap; }
         match.max_underscore_cnt = std::max(match.max_underscore_cnt, gap);
         prev_lit_end             = lit->start + lit->len;
 
@@ -131,6 +152,9 @@ class Skeleton {
         seg_[idx].has_suffix_percent = seg_[idx + 1].has_prefix_percent;
       }
     }
+
+    // Must run after has_suffix_percent is filled in, it reads those flags.
+    FoldLiteralFreeSegments();
   }
 
   // Convenience overload: no escaping
@@ -164,11 +188,44 @@ class Skeleton {
   /* Skeleton utilities */
   auto InitializeMatcher() const -> Matcher;
   void ResetMatcher(Matcher &matcher) const;
-  auto ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
-                        u64 text_length) const -> bool;
+
+  /**
+   * @brief Byte offset just past this segment's trailing underscores.
+   *
+   * Walks suffix_underscore_cnt code points forward from the end of the
+   * literal that just matched. nullopt when the text runs out first, which
+   * means the segment cannot be satisfied here.
+   *
+   * This is both the tail check for the last segment and the earliest byte
+   * offset the next segment may start at, so the two cannot drift apart.
+   */
+  auto SegmentTailEnd(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
+                      u64 text_length) const -> std::optional<u64>;
+
+  /**
+   * @brief Whether a satisfied last literal completes the whole pattern.
+   * @param tail_end The offset SegmentTailEnd returned for the same match.
+   */
+  auto ValidLastLiteral(u64 curr_segment_idx, u64 tail_end, u64 text_length) const -> bool;
 
  private:
   friend class Matcher;
+
+  /**
+   * @brief Remove segments that hold underscores and no literal.
+   *
+   * Every advance past a segment is driven by an Aho-Corasick hit, and a
+   * segment with no literal in it never produces one, so on its own such a
+   * segment can never be left and the pattern can never match.
+   *
+   * They fold away instead of being special cased, because a `%` on both
+   * sides of a run of underscores means the run can slide: `a%__%b` and
+   * `a__%b` both say "a, then at least two code points, then b somewhere
+   * after". The same argument at the end of the pattern makes `a%__` the
+   * same as a segment for `a` with two trailing underscores and a suffix
+   * `%`, which is "a followed by at least two code points".
+   */
+  void FoldLiteralFreeSegments();
 
   bool only_wildcard_;
   std::vector<Segment> seg_;

@@ -205,6 +205,24 @@ jobs:
       - run: pipx install clang-format==18.1.8
       - run: scripts/format.sh --check
 
+  # The differential fuzzer, given a real budget. ctest already runs it for two
+  # and a half seconds in every other job, including under ASan and UBSan,
+  # which is enough to catch a regression that fires immediately and not much
+  # else. Sixty seconds is about 44 million pattern and text decisions on an
+  # eight core x86_64 box and fewer on a runner, which is a different question.
+  #
+  # The seed is fixed, so this job either fails for everyone or passes for
+  # everyone. A fuzzer that picks a fresh seed per run finds more over a month
+  # and turns every red build into an argument about whether it was real.
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - run: cmake --preset release
+      - run: cmake --build --preset release --target FuzzDifferential --parallel 4
+      - run: ./build/release/test/FuzzDifferential --seconds 60
+
   # Pinned for the same reason as clang-format, and more so: the check set
   # grows with every release, so an unpinned clang-tidy turns somebody else's
   # unrelated PR red on the day the runner image moves. What is enabled, and

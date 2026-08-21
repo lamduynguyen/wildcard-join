@@ -1,7 +1,5 @@
 #include "aho_corasick/skeleton.h"
 
-#include "common/rand.h"
-
 namespace aho_corasick {
 
 // --------------------------------------------------------------------------------------------

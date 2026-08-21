@@ -1,26 +1,15 @@
 #include "common/util.h"
 #include "common/typedef.h"
 
-#include "fmt/format.h"
-
-#include <fcntl.h>
-#ifdef __linux__
-#include <linux/fs.h>
-#endif
-#include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
+#ifdef __linux__
+#include <pthread.h>
+#include <sched.h>
+#endif
 #include <atomic>
 #include <cassert>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <numeric>
-#include <ranges>
-#include <span>
-#include <string_view>
-#include <vector>
+#include <stdexcept>
 
 namespace aho_corasick {
 
@@ -63,7 +52,7 @@ void PinThisThread(u16 t_i) {
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
   CPU_SET(t_i, &cpuset);
-  pthread_t current_thread = pthread_self();
+  const pthread_t current_thread = pthread_self();
   if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) {
     throw std::runtime_error("Could not pin a thread, maybe because of over subscription?");
   }

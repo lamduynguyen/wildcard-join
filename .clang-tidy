@@ -27,9 +27,6 @@ Checks: >
   readability-simplify-boolean-expr,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
-  -cert-err58-cpp,
-  -clang-analyzer-security.insecureAPI.rand,
-  -concurrency-mt-unsafe,
   -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
   -misc-no-recursion,
@@ -44,13 +41,12 @@ Checks: >
 # does not fit this codebase, and the check should keep firing everywhere else.
 #
 # bugprone-easily-swappable-parameters
-#   Four findings and every one of them is a real API smell:
+#   Three findings and every one of them is a real API smell:
 #   PatternIndexType and IsPreviousLiteral each take two adjacent u32 or u16,
-#   ZipfGenerator takes two convertible ones, and insertAndUnlock takes three.
-#   Nothing the linter can do about it. The fix is either strong typedefs or a
-#   parameter struct, and that is a change to the public interface of the
-#   library, not something to slip into the commit that turns a linter on.
-#   Worth doing, worth its own PR.
+#   and insertAndUnlock takes three. Nothing the linter can do about it. The
+#   fix is either strong typedefs or a parameter struct, and that is a change
+#   to the public interface of the library, not something to slip into the
+#   commit that turns a linter on. Worth doing, worth its own PR.
 #
 # bugprone-unchecked-optional-access
 #   Three findings, all in skeleton.h, and all three are the same false
@@ -66,23 +62,6 @@ Checks: >
 #   dereference on the second iteration. Suppressing three lines with NOLINT
 #   would be lying about three separate places instead of once here, and the
 #   check has no way to be right about this shape.
-#
-# cert-err58-cpp
-#   Two findings, both on the thread_local generators in common/rand.cc. The
-#   check is about a throwing initialiser for an object constructed before
-#   main, and it is technically correct. It is also unactionable without moving
-#   to lazy construction behind a function, which costs a branch on every call
-#   into the hot random path for a failure mode that is an allocation failure at
-#   startup.
-#
-# clang-analyzer-security.insecureAPI.rand
-# concurrency-mt-unsafe
-#   One finding each and both on the same line, the drand48 call in
-#   common/rand.cc. drand48 is not thread safe and is not a source of secure
-#   randomness, and both of those are true. It is also dead: ZipfGenerator, the
-#   only thing that reaches it, has no callers anywhere in src/ or test/.
-#   Deleting dead code is the honest fix and it is filed as its own issue.
-#   Until then, off, because there is no point failing CI on code nothing runs.
 #
 # misc-include-cleaner
 #   Around fifty findings and most of them are a demand to directly include the
@@ -105,11 +84,11 @@ Checks: >
 #   for no benefit.
 #
 # misc-use-anonymous-namespace
-#   Three findings, two in common/rand.cc and one in skeleton.cc, all asking
-#   for `static` at file scope to be an anonymous namespace instead. Both give
-#   internal linkage and the check is a preference between two spellings of the
-#   same thing. The codebase uses `static` consistently and swapping it under a
-#   CI change would be a diff nobody asked for.
+#   One finding, in skeleton.cc, asking for `static` at file scope to be an
+#   anonymous namespace instead. Both give internal linkage and the check is a
+#   preference between two spellings of the same thing. The codebase uses
+#   `static` consistently and swapping it under a CI change would be a diff
+#   nobody asked for.
 #
 # performance-no-int-to-ptr
 #   Two findings, both in getLeaf and setLeaf, which are the tagged pointer:
@@ -132,7 +111,7 @@ Checks: >
 # unreadable. When a header is added under common/ it has to be added here too,
 # which is the correct default for a directory that already holds three files
 # nobody in this group wrote.
-HeaderFilterRegex: 'src/include/(aho_corasick|art|kmp)/[^/]+\.h$|src/include/common/(constant|lrucache|rand|typedef|util)\.h$|test/[^/]+\.h$'
+HeaderFilterRegex: 'src/include/(aho_corasick|art|kmp)/[^/]+\.h$|src/include/common/(constant|lrucache|typedef|util)\.h$|test/[^/]+\.h$'
 
 WarningsAsErrors: '*'
 

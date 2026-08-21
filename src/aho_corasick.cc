@@ -6,9 +6,7 @@
 
 namespace aho_corasick {
 
-std::atomic<u64> AhoCorasick::NUMBER_OF_UNIQUE_LITERALS = 0;
-
-AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART::Tree>()) {}
+AhoCorasick::AhoCorasick() : trie_(std::make_unique<ART::Tree>()), unique_literal_cnt_(0) {}
 
 auto AhoCorasick::GetRoot() const -> ART::N256 * { return trie_->root; }
 
@@ -18,7 +16,7 @@ void AhoCorasick::Insert(const char *keyword, uint64_t keyword_len, const Patter
   const u32 literal_len       = static_cast<u32>(keyword_len);  // excludes the null terminator appended by the trie
 
   auto new_tid = [&]() {
-    auto tid = NUMBER_OF_UNIQUE_LITERALS.fetch_add(1, std::memory_order_relaxed);
+    auto tid = unique_literal_cnt_.fetch_add(1, std::memory_order_relaxed);
     LiteralEntry entry(literal_len);
     entry.bitmap.add(keyword_auxIndex.ToUint());
     literal_map_.emplace(tid, std::move(entry));

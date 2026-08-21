@@ -68,12 +68,20 @@ struct LiteralEntry {
 
 class AhoCorasick {
  public:
-  static std::atomic<u64> NUMBER_OF_UNIQUE_LITERALS;
-
   AhoCorasick();
   ~AhoCorasick() = default;
 
   auto GetRoot() const -> ART::N256 *;
+
+  /**
+   * @brief How many distinct literals this automaton holds.
+   *
+   * Distinct by byte string, so inserting the same literal for two patterns
+   * counts once. Relaxed because the only caller that can race with an
+   * insert is a progress report, and a build that has finished has already
+   * synchronised through whatever joined its threads.
+   */
+  inline auto NumUniqueLiterals() const -> u64 { return unique_literal_cnt_.load(std::memory_order_relaxed); }
 
   static auto VisitCodePoint(ART::N256 *cur, const char *cp, u8 cp_len) -> ART::N256 *;
   void Insert(const char *keyword, uint64_t keyword_len, const PatternIndexType &keyword_aux_index);
@@ -84,6 +92,7 @@ class AhoCorasick {
 
   FRIEND_TEST(TestAhoCorasick, SingleByteUnicode);
   FRIEND_TEST(TestAhoCorasick, MultiByteUnicode);
+  FRIEND_TEST(TestAhoCorasick, LiteralIdsAreDensePerInstance);
 
   struct BFSNodeItem {
     ART::N256 *node;
@@ -94,6 +103,12 @@ class AhoCorasick {
 
   std::unique_ptr<ART::Tree> trie_;
   tbb::concurrent_unordered_map<TupleID, LiteralEntry> literal_map_;
+
+  // Hands out the key for literal_map_, one per distinct literal. Still
+  // atomic because Insert is the concurrent path the paper is about, but per
+  // instance rather than per process, so two tries built at the same time no
+  // longer serialise on the same cache line.
+  std::atomic<u64> unique_literal_cnt_;
 };
 
 static_assert(sizeof(PatternIndexType) == 8);

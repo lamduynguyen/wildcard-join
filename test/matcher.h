@@ -1,3 +1,5 @@
+#include "benchmark/reference.h"
+
 #include "aho_corasick/aho_corasick.h"
 #include "aho_corasick/parser.h"
 #include "aho_corasick/skeleton.h"
@@ -15,52 +17,14 @@
 using aho_corasick::Tokenizer;
 using namespace std::string_view_literals;
 
-// inline because these are definitions in a header. Only test_matching.cc
-// includes it today, so nothing links twice yet, and that is the whole reason
-// to fix it now rather than when a second test picks the header up.
-inline bool DuckDBMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
-  size_t pidx = 0;
-  size_t sidx = 0;
-  for (; pidx < plen && sidx < slen;) {
-    auto pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
-    auto schar = umbra::Utf8::readCodePoint(&sdata[sidx], sdata + slen);
-
-    // The body here is identical to the one in the codePoint == codePoint arm
-    // below, and it is meant to be: "_" consumes exactly one code point on each
-    // side, which is the same step a literal match takes. The two arms cannot
-    // be merged into one condition because "%" has to be tested between them,
-    // and a pattern "%" against a text "%" would take the wrong arm if the
-    // equality test came first.
-    // NOLINTNEXTLINE(bugprone-branch-clone)
-    if (pchar.codePoint == Tokenizer::UNDERSCORE) {
-      pidx = pchar.next - pdata;
-      sidx = schar.next - sdata;
-    } else if (pchar.codePoint == Tokenizer::PERCENTAGE) {
-      while (pidx < plen && pchar.codePoint == Tokenizer::PERCENTAGE) {
-        pidx  = pchar.next - pdata;
-        pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
-      }
-      if (pidx == plen) { return true; /* tail is acceptable */ }
-      for (; sidx < slen;) {
-        if (DuckDBMatching(sdata + sidx, slen - sidx, pdata + pidx, plen - pidx)) { return true; }
-        sidx  = schar.next - sdata;
-        schar = umbra::Utf8::readCodePoint(&sdata[sidx], sdata + slen);
-      }
-      return false;
-    } else if (pchar.codePoint == schar.codePoint) {
-      pidx = pchar.next - pdata;
-      sidx = schar.next - sdata;
-    } else {
-      return false;
-    }
-  }
-  auto pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
-  while (pidx < plen && pchar.codePoint == Tokenizer::PERCENTAGE) {
-    pidx  = pchar.next - pdata;
-    pchar = umbra::Utf8::readCodePoint(&pdata[pidx], pdata + plen);
-  }
-  return pidx == plen && sidx == slen;
-}
+// The oracle lives in benchmark/reference.h. It used to live here as well, and
+// in both benchmarks, which is three copies of the one function every failure
+// in this repository gets checked against. See the comment there for why it is
+// under benchmark/ and not under test/.
+//
+// The name is what the tests already call it, so it is pulled into this scope
+// rather than spelled bench:: at two hundred call sites.
+using bench::NljRecursiveMatch;
 
 inline bool GreedyMatching(const char *sdata, size_t slen, const char *pdata, size_t plen) {
   size_t sidx = 0;

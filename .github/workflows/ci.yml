@@ -223,6 +223,18 @@ jobs:
       - run: cmake --build --preset release --target FuzzDifferential --parallel 4
       - run: ./build/release/test/FuzzDifferential --seconds 60
 
+  # The benchmark binaries sit behind ENABLE_BENCHMARK, so nothing else in CI
+  # compiles them and they would rot without this. Build only and nothing is
+  # run: a timing number off a shared runner is not worth asserting on, and the
+  # answers the harness produces are already checked by TestGolden in the
+  # ordinary test job.
+  benchmark-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: cmake --preset release-bench
+      - run: cmake --build --preset release-bench --parallel 4
+
   # Pinned for the same reason as clang-format, and more so: the check set
   # grows with every release, so an unpinned clang-tidy turns somebody else's
   # unrelated PR red on the day the runner image moves. What is enabled, and

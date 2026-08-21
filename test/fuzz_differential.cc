@@ -230,7 +230,7 @@ auto main(int argc, char **argv) -> int {
         const auto &text = texts[pass == 2 ? texts.size() - 1 - ti : ti];
         Drive(b, text, result);
         for (size_t pi = 0; pi < patterns.size(); pi++) {
-          bool ref = DuckDBMatching(text.data(), text.size(), patterns[pi].data(), patterns[pi].size());
+          bool ref = NljRecursiveMatch(text.data(), text.size(), patterns[pi].data(), patterns[pi].size());
           c.decisions++;
           if (result[pi] != ref) { Fail(round_seed, c, a, patterns[pi], text, static_cast<bool>(result[pi]), ref); }
           if (ref) { c.agreed_yes++; }

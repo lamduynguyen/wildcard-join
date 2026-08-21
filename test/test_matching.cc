@@ -151,10 +151,10 @@ TEST(TestMatching, ASCII) {
     {"the%q__ck%b%own%f%x%j%mps%over%l_zy%do_.", true},
   };
 
-  // DuckDB Matching
+  // NLJ-recursive matching
   for (auto &[pat, result] : tests) {
-    auto try_pat = DuckDBMatching(text.c_str(), text.size(), pat.c_str(), pat.size());
-    if (try_pat != result) { std::cout << "DuckDB: evaluate pattern: '" << pat << "' return wrong result\n"; }
+    auto try_pat = NljRecursiveMatch(text.c_str(), text.size(), pat.c_str(), pat.size());
+    if (try_pat != result) { std::cout << "NLJrec: evaluate pattern: '" << pat << "' return wrong result\n"; }
     EXPECT_EQ(try_pat, result);
   }
 
@@ -298,12 +298,12 @@ TEST(TestMatching, BasicUnicode) {
     {u8"%😀🐍🍕%Привет%мир%こんにちは%wrong%", false},
   };
 
-  // DuckDB Matching
+  // NLJ-recursive matching
   for (auto &[pat, result] : tests) {
-    auto try_pat = DuckDBMatching(reinterpret_cast<char *>(text.data()), text.size(),
+    auto try_pat = NljRecursiveMatch(reinterpret_cast<char *>(text.data()), text.size(),
                                   reinterpret_cast<char *>(pat.data()), pat.size());
     if (try_pat != result) {
-      fmt::print("DuckDB: evaluate pattern '{}' return wrong result\n", reinterpret_cast<const char *>(pat.data()));
+      fmt::print("NLJrec: evaluate pattern '{}' return wrong result\n", reinterpret_cast<const char *>(pat.data()));
     }
     EXPECT_EQ(try_pat, result);
   }
@@ -505,7 +505,7 @@ TEST(TestMatching, UnderscoreRegressions) {
     const std::string text(c.text);
     const std::string pattern(c.pattern);
 
-    EXPECT_EQ(DuckDBMatching(text.data(), text.size(), pattern.data(), pattern.size()), c.expected)
+    EXPECT_EQ(NljRecursiveMatch(text.data(), text.size(), pattern.data(), pattern.size()), c.expected)
       << "reference disagrees with the expectation for '" << pattern << "' on '" << text << "'";
     EXPECT_EQ(GreedyMatching(text.data(), text.size(), pattern.data(), pattern.size()), c.expected)
       << "greedy reference disagrees with the expectation for '" << pattern << "' on '" << text << "'";

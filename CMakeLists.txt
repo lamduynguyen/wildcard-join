@@ -53,6 +53,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Dependencies)
 
 add_subdirectory(third_party/croaring)
+add_subdirectory(third_party/csv-parser)
 
 # ---------------------------------------------------------------------------
 # Aho-Corasick main library
@@ -76,6 +77,11 @@ if(ENABLE_TESTING)
   wj_provide_googletest()
   enable_testing()
   add_subdirectory(test)
+endif()
+
+option(ENABLE_BENCHMARK "Build benchmark binaries" OFF)
+if(ENABLE_BENCHMARK)
+  add_subdirectory(benchmark)
 endif()
 
 option(SANITIZER "Compile with address and leak sanitizer" OFF)

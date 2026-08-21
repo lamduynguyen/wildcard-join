@@ -17,15 +17,9 @@
 //   fuzz_differential                 run for the default budget from a fixed seed
 //   fuzz_differential --seconds 60    what CI runs
 //   fuzz_differential --seed 12345    replay the seed a failure printed
-//   fuzz_differential --no-skip       include the patterns #22 is about
 //
 // Exits 0 if everything agreed, 1 on the first disagreement, having printed
 // the pattern, the text, and both as hex.
-//
-// Four bugs are open against the matcher, all of them found by this, all of
-// them about underscores. They are filed as #22 and the patterns that trigger
-// them are filtered out below, otherwise this would fail within seconds and
-// could not be a check on anything else.
 
 #include "matcher.h"
 
@@ -108,69 +102,6 @@ auto GenPattern(std::mt19937_64 &rng, const Alphabet &a, size_t max_cp) -> std::
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Known bugs, filed as #22, suppressed here so the rest of the space can be
-// fuzzed while they are open.
-//
-// Each predicate is deliberately narrow and named after the bug it belongs to,
-// every suppressed pattern is counted, and the counts are printed, so a run
-// cannot quietly be testing nothing. --no-skip turns them all off, which is
-// how you check a fix. At the time of writing they take out about one pattern
-// in ten.
-
-// #22 bug 1. A segment is a run of pattern between two '%'. A segment holding
-// only underscores has no literal for the automaton to emit, so nothing ever
-// advances the matcher past it and the pattern never matches. A pattern that
-// is nothing but wildcards is fine, it goes through SpecialMatchEmptyPattern
-// instead, so the literal check below matters.
-auto HasLiteralFreeSegment(const std::string &pattern) -> bool {
-  bool any_literal = false;
-  for (char c : pattern) {
-    if (c != '%' && c != '_') { any_literal = true; }
-  }
-  if (!any_literal) { return false; }
-
-  size_t i = 0;
-  while (i <= pattern.size()) {
-    auto end = pattern.find('%', i);
-    if (end == std::string::npos) { end = pattern.size(); }
-    auto seg = pattern.substr(i, end - i);
-    if (!seg.empty() && seg.find_first_not_of('_') == std::string::npos) { return true; }
-    i = end + 1;
-  }
-  return false;
-}
-
-auto IsMultibyte(const Alphabet &a) -> bool {
-  for (const auto &c : a.chars) {
-    if (c.size() > 1) { return true; }
-  }
-  return false;
-}
-
-// #22 bug 2. A segment that follows a '%' is allowed to start anywhere, and
-// the underscores before its first literal are not checked at all. '%_ab'
-// accepts 'ab'. Any segment beginning with an underscore is the shape, and
-// every segment except a leading one follows a '%'.
-auto HasUncheckedLeadingUnderscore(const std::string &pattern) -> bool {
-  return pattern.find("%_") != std::string::npos;
-}
-
-// #22 bug 3. The gap a segment's trailing underscores impose is added to a
-// byte offset as though it were a byte count, so one multi-byte code point
-// satisfies several underscores. Needs a '_' immediately before a '%', and
-// only shows up when a code point can be wider than a byte.
-auto HasByteCountedGap(const std::string &pattern, const Alphabet &a) -> bool {
-  return IsMultibyte(a) && pattern.find("_%") != std::string::npos;
-}
-
-// #22 bug 4. An anchored first segment checks its first literal with
-// text_start_pos == pat_pos, a byte offset against a pattern byte offset, so
-// leading underscores that landed on multi-byte code points never line up.
-auto HasByteCountedAnchor(const std::string &pattern, const Alphabet &a) -> bool {
-  return IsMultibyte(a) && !pattern.empty() && pattern.front() == '_';
-}
-
 auto Hex(const std::string &s) -> std::string {
   std::string out;
   for (unsigned char c : s) { out += fmt::format("{:02x} ", c); }
@@ -212,11 +143,9 @@ void Drive(BuildSide &b, const std::string &text, std::vector<bool> &result) {
 }
 
 struct Counters {
-  uint64_t rounds        = 0;
-  uint64_t decisions     = 0;             // (text, pattern) pairs compared
-  uint64_t agreed_yes    = 0;             // pairs both sides called a match
-  uint64_t skipped[4]    = {0, 0, 0, 0};  // patterns dropped, one slot per #22 bug
-  uint64_t patterns_kept = 0;
+  uint64_t rounds     = 0;
+  uint64_t decisions  = 0;  // (text, pattern) pairs compared
+  uint64_t agreed_yes = 0;  // pairs both sides called a match
 };
 
 // Prints everything needed to turn a failure into a test case, then leaves.
@@ -242,10 +171,9 @@ auto main(int argc, char **argv) -> int {
   // Two and a half seconds by default, which is what ctest runs. CI passes
   // --seconds 60. The default seed is fixed so a plain run is reproducible;
   // the point of the budget is depth, not a different sample every time.
-  double seconds       = 2.5;
-  uint64_t seed        = 0x5eed1234;
-  bool seed_given      = false;
-  bool skip_known_bugs = true;
+  double seconds  = 2.5;
+  uint64_t seed   = 0x5eed1234;
+  bool seed_given = false;
 
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "--seconds") == 0 && i + 1 < argc) {
@@ -253,10 +181,8 @@ auto main(int argc, char **argv) -> int {
     } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
       seed       = std::strtoull(argv[++i], nullptr, 0);
       seed_given = true;
-    } else if (std::strcmp(argv[i], "--no-skip") == 0) {
-      skip_known_bugs = false;
     } else {
-      fmt::print(stderr, "usage: {} [--seconds N] [--seed N] [--no-skip]\n", argv[0]);
+      fmt::print(stderr, "usage: {} [--seconds N] [--seed N]\n", argv[0]);
       return 2;
     }
   }
@@ -288,31 +214,7 @@ auto main(int argc, char **argv) -> int {
     auto n_texts        = 1 + Pick(rng, 8);
 
     std::vector<std::string> patterns;
-    for (size_t i = 0; i < n_patterns; i++) {
-      auto p = GenPattern(rng, a, max_pattern_cp);
-      if (skip_known_bugs) {
-        if (HasLiteralFreeSegment(p)) {
-          c.skipped[0]++;
-          continue;
-        }
-        if (HasUncheckedLeadingUnderscore(p)) {
-          c.skipped[1]++;
-          continue;
-        }
-        if (HasByteCountedGap(p, a)) {
-          c.skipped[2]++;
-          continue;
-        }
-        if (HasByteCountedAnchor(p, a)) {
-          c.skipped[3]++;
-          continue;
-        }
-      }
-      patterns.push_back(p);
-    }
-    // Every pattern in the round was suppressed. Nothing to build a trie from.
-    if (patterns.empty()) { continue; }
-    c.patterns_kept += patterns.size();
+    for (size_t i = 0; i < n_patterns; i++) { patterns.push_back(GenPattern(rng, a, max_pattern_cp)); }
 
     std::vector<std::string> texts;
     for (size_t i = 0; i < n_texts; i++) { texts.push_back(GenText(rng, a, max_text_cp)); }
@@ -343,13 +245,5 @@ auto main(int argc, char **argv) -> int {
   // millions of agreeing decisions and have tested only the reject path.
   auto rate = c.decisions == 0 ? 0.0 : 100.0 * static_cast<double>(c.agreed_yes) / static_cast<double>(c.decisions);
   fmt::print("no disagreements: {} rounds, {} decisions, {:.1f}% of them matches\n", c.rounds, c.decisions, rate);
-  fmt::print("patterns: {} run, skipped for #22: bug 1 {}, bug 2 {}, bug 3 {}, bug 4 {}\n", c.patterns_kept,
-             c.skipped[0], c.skipped[1], c.skipped[2], c.skipped[3]);
-  // A run that suppressed everything would otherwise print the same reassuring
-  // first line as a run that suppressed nothing.
-  if (skip_known_bugs && c.patterns_kept == 0) {
-    fmt::print(stderr, "!! every pattern was suppressed, this run checked nothing\n");
-    return 1;
-  }
   return 0;
 }

@@ -392,6 +392,130 @@ TEST(TestMatching, EscapeCharacter) {
   RUN_AHOCORASICK_ESCAPE_TEST(text, patterns, tests, "!"sv);
 }
 
+// Regression cases for four bugs the differential fuzzer found. Each one
+// is a shape nothing in the tests above happened to cover, and each one is
+// checked here against both reference matchers as well as the probe, so a
+// wrong expectation below is a failing test and not a silently wrong baseline.
+//
+// Every pattern here has a single-byte twin that already worked, kept next to
+// it, because three of the four are the same arithmetic being right on ASCII
+// and wrong on anything wider.
+TEST(TestMatching, UnderscoreRegressions) {
+  struct Case {
+    const char *text;
+    const char *pattern;
+    bool expected;
+  };
+
+  const std::vector<Case> cases = {
+    // Bug 1: a segment holding only underscores. It produces no literal for
+    // the automaton to emit, so nothing advanced the matcher past it and the
+    // pattern could never match, whatever the text.
+    {"ab", "a%_", true},
+    {"a", "a%_", false},
+    {"abc", "a%__", true},
+    {"ab", "a%__", false},
+    {"axbyc", "a%b%_", true},
+    {"axyb", "a%_%b", true},
+    {"ab", "a%_%b", false},
+    {"axyzb", "a%__%b", true},
+    {"axb", "a%__%b", false},
+    {"xya", "_%a", true},
+    {"xa", "_%a", true},
+    {"a", "_%a", false},
+    {"xya", "__%a", true},
+    {"xa", "__%a", false},
+    // Two literal free segments in a row, which is where folding one of them
+    // away can lose the other one's underscores.
+    {"aaa", "__%_%aa", false},
+    {"aaaaa", "__%_%aa", true},
+    // Patterns that are nothing but wildcards never had the bug, they go
+    // through SpecialMatchEmptyPattern instead. Here so a fix to the above
+    // cannot break them.
+    {"", "%_", false},
+    {"a", "%_", true},
+    {"a", "_%", true},
+    {"", "_%_", false},
+    {"ab", "_%_", true},
+
+    // Bug 2: the underscores before a segment's first literal were not
+    // checked at all when the segment followed a percent. No Unicode needed.
+    {"ab", "%_ab", false},
+    {"xab", "%_ab", true},
+    {"ab", "%__ab", false},
+    {"xab", "%__ab", false},
+    {"xyab", "%__ab", true},
+    {"ab", "a%_b", false},
+    {"axb", "a%_b", true},
+    {"axb", "a%__b", false},
+    {"axyb", "a%__b", true},
+    {"xab", "%a%_b", false},
+    {"xayb", "%a%_b", true},
+
+    // Bug 3: a segment's trailing underscore count was added to a text byte
+    // offset, so one wide code point paid for several underscores.
+    {"a\xe4\xb8\xad"
+     "b",
+     "a__%b", false},
+    {"a\xe4\xb8\xad\xe6\x96\x87"
+     "b",
+     "a__%b", true},
+    {"a\xe4\xb8\xad\xe6\x96\x87"
+     "b",
+     "a___%b", false},
+    {"axb", "a__%b", false},
+    {"axyb", "a__%b", true},
+
+    // Bug 4: an anchored first literal was placed by comparing a text byte
+    // offset against a pattern byte offset, which leading underscores make
+    // different numbers as soon as a code point is wider than a byte.
+    {"\xe4\xb8\xad"
+     "ab",
+     "_ab", true},
+    {"\xe4\xb8\xad\xe6\x96\x87"
+     "ab",
+     "__ab", true},
+    {"\xe4\xb8\xad\xe6\x96\x87"
+     "ab",
+     "_ab", false},
+    {"\xe4\xb8\xad\xe4\xb8\xad"
+     "b",
+     "_\xe4\xb8\xad"
+     "b",
+     true},
+    {"xab", "_ab", true},
+    {"xyab", "__ab", true},
+    {"xab", "__ab", false},
+
+    // Where it was already right, kept so the rewrite is pinned on both
+    // sides. Underscores between two literals of one segment go through the
+    // delayed queue, which always worked in code point indices, and trailing
+    // underscores at the end of the pattern always walked the text.
+    {"a\xe4\xb8\xad"
+     "b",
+     "a__b", false},
+    {"a\xe4\xb8\xad\xe6\x96\x87"
+     "b",
+     "a__b", true},
+    {"a\xe4\xb8\xad", "a__", false},
+    {"a\xe4\xb8\xad\xe6\x96\x87", "a__", true},
+  };
+
+  for (const auto &c : cases) {
+    const std::string text(c.text);
+    const std::string pattern(c.pattern);
+
+    EXPECT_EQ(DuckDBMatching(text.data(), text.size(), pattern.data(), pattern.size()), c.expected)
+      << "reference disagrees with the expectation for '" << pattern << "' on '" << text << "'";
+    EXPECT_EQ(GreedyMatching(text.data(), text.size(), pattern.data(), pattern.size()), c.expected)
+      << "greedy reference disagrees with the expectation for '" << pattern << "' on '" << text << "'";
+
+    std::vector<std::string> one = {pattern};
+    auto got                     = AhoCorasickMultiplePatterns(text.data(), text.size(), one, "");
+    EXPECT_EQ(got[0], c.expected) << "aho-corasick got '" << pattern << "' wrong on '" << text << "'";
+  }
+}
+
 auto main(int argc, char **argv) -> int {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

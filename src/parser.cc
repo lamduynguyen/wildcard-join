@@ -54,7 +54,6 @@ auto TextParserIterator::ParseText() -> OutputEmitType {
 
 template <typename BitMap>
 void TextParserIterator::IterateOneCodePoint(BitMap &result) {
-  const auto end_offset = text_offset;
   ContinueParseText(emit_buffer_);
 
   for (const auto &match : emit_buffer_) {
@@ -73,11 +72,19 @@ void TextParserIterator::IterateOneCodePoint(BitMap &result) {
     // Before the call, not after a successful one: TryMatchingLiteral can
     // consume an LRU entry and still return false.
     MarkDirty(pat_id);
-    if (!matcher.TryMatchingLiteral(sket, match, codepoint_idx, queue)) { continue; }
+    if (!matcher.TryMatchingLiteral(sket, match, codepoint_idx, queue, text, text_len)) { continue; }
 
-    if (segment.IsLastLiteral(match.pattern_index.start_pos) &&
-        sket.ValidLastLiteral(match, matcher.CurrentSegmentIdx(), text, text_len) &&
-        !matcher.AdvanceNextSegment(sket, end_offset + segment.suffix_underscore_cnt + 1)) {
+    if (!segment.IsLastLiteral(match.pattern_index.start_pos)) { continue; }
+
+    // One walk, used twice. It is the tail check for the last segment and the
+    // earliest offset the next segment may start at, and those have to be the
+    // same number. They used to be computed separately, one with a code point
+    // walk and one by adding an underscore count to a byte offset.
+    const auto tail_end = sket.SegmentTailEnd(match, matcher.CurrentSegmentIdx(), text, text_len);
+    if (!tail_end.has_value()) { continue; }
+
+    if (sket.ValidLastLiteral(matcher.CurrentSegmentIdx(), *tail_end, text_len) &&
+        !matcher.AdvanceNextSegment(sket, *tail_end)) {
       result[pat_id] = true;
     }
   }

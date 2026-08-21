@@ -1,5 +1,6 @@
 #include "aho_corasick/skeleton.h"
 
+
 namespace aho_corasick {
 
 // --------------------------------------------------------------------------------------------
@@ -69,6 +70,65 @@ auto Skeleton::SpecialMatchEmptyPattern(const char *p, u32 plen, const char *s, 
 
 // --------------------------------------------------------------------------------------------
 
+/**
+ * @brief Walk `count` code points forward from byte offset `from`.
+ * @return The byte offset reached, or nullopt if the text ran out first.
+ *
+ * Every underscore count in a Segment is a count of code points and every
+ * offset into the text is a byte offset, and the two are only the same number
+ * on text that happens to be ASCII. Everything that converts one into the
+ * other goes through here, instead of three callers doing the arithmetic
+ * themselves.
+ */
+static auto Utf8Advance(const char *text, u64 text_length, u64 from, u32 count) -> std::optional<u64> {
+  auto cur = from;
+  for (auto idx = 0U; idx < count; idx++) {
+    if (cur >= text_length) { return std::nullopt; }
+    const auto next = umbra::Utf8::readCodePoint(text + cur, text + text_length);
+    cur += static_cast<u64>(next.next - (text + cur));
+  }
+  return cur;
+}
+
+void Skeleton::FoldLiteralFreeSegments() {
+  if (seg_.size() < 2) { return; }
+
+  // Segment 0 folds forward, because it has no predecessor to fold into. Its
+  // underscores become leading underscores of what follows, and the `%` that
+  // separated them is what lets the merged segment still start anywhere.
+  // `__%a` becomes `%__a`, and both mean "at least two code points, then a".
+  //
+  // Both counts, not just the suffix. A literal free segment out of the
+  // constructor has everything in its suffix, but two of them in a row means
+  // the second one is carrying the first one's underscores in its prefix by
+  // the time it is looked at, and `__%_%aa` has to keep all three.
+  while (seg_.size() > 1 && !seg_[0].HasLiteral()) {
+    seg_[1].prefix_underscore_cnt += seg_[0].prefix_underscore_cnt + seg_[0].suffix_underscore_cnt;
+    seg_[1].has_prefix_percent = true;
+    seg_.erase(seg_.begin());
+  }
+
+  // Everything else folds backward, into the trailing underscores of its
+  // predecessor. The predecessor keeps has_suffix_percent, which it already
+  // has, since a `%` is what put a segment boundary there in the first place.
+  for (auto idx = 1U; idx < seg_.size();) {
+    if (seg_[idx].HasLiteral()) {
+      idx++;
+      continue;
+    }
+    seg_[idx - 1].suffix_underscore_cnt += seg_[idx].prefix_underscore_cnt + seg_[idx].suffix_underscore_cnt;
+    seg_.erase(seg_.begin() + idx);
+  }
+
+  // The counts above moved, and max_underscore_cnt sizes the LRU cache, so it
+  // has to cover them again. Too large only costs memory, too small evicts a
+  // live alignment and turns into a missed match.
+  for (auto &segment : seg_) {
+    segment.max_underscore_cnt =
+      std::max({segment.max_underscore_cnt, segment.prefix_underscore_cnt, segment.suffix_underscore_cnt});
+  }
+}
+
 // Cap must accommodate every alignment that may be in match_ simultaneously.
 // With a prefix `%` and repeated literals, many alignments can ripen at the
 // same codepoint; bounding by max_underscore_cnt alone evicts valid entries.
@@ -88,6 +148,16 @@ void Skeleton::ResetMatcher(Matcher &matcher) const {
   matcher.Reset(LruCapForSegment(seg_[0]));
 }
 
+auto Skeleton::SegmentTailEnd(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
+                              u64 text_length) const -> std::optional<u64> {
+  // The trailing `_`s impose a minimum-length tail constraint whether or not
+  // the segment has a `%` after it: there must be at least
+  // suffix_underscore_cnt code points between the end of the last literal and
+  // the end of the text.
+  return Utf8Advance(text, text_length, ac_match.text_start_pos + ac_match.literal_len,
+                     seg_[curr_segment_idx].suffix_underscore_cnt);
+}
+
 /**
  * We can only satisfy the last-literal check, i.e., advance to the next segment, if:
  * - Current segment is not the last one of the skeleton, OR
@@ -95,31 +165,16 @@ void Skeleton::ResetMatcher(Matcher &matcher) const {
  * - Current segment is the last one, has no Tokenizer::PERCENTAGE suffix, and the remaining text
  *   exactly matches the trailing underscores of this segment.
  */
-auto Skeleton::ValidLastLiteral(const MatchingOutputType &ac_match, u64 curr_segment_idx, const char *text,
-                                u64 text_length) const -> bool {
-  const auto &segment  = seg_[curr_segment_idx];
-  auto next_sket_index = curr_segment_idx + 1;
-
-  if (next_sket_index < seg_.size()) { return true; }  // more segments remain
-
-  // Even with a trailing `%`, the trailing `_`s impose a minimum-length tail
-  // constraint: there must be ≥ suffix_underscore_cnt codepoints between the
-  // end of the last literal and the end of the text. Without `%`, the count
-  // must match exactly.
-  auto iterate_cur = ac_match.text_start_pos + ac_match.literal_len;
-  for (auto idx = 0U; idx < segment.suffix_underscore_cnt; idx++) {
-    if (iterate_cur >= text_length) { return false; }
-    auto next_cp = umbra::Utf8::readCodePoint(text + iterate_cur, text + text_length);
-    iterate_cur += next_cp.next - (text + iterate_cur);
-  }
-  if (seg_.back().has_suffix_percent) { return true; }  // trailing % absorbs any further bytes
-  return iterate_cur == text_length;
+auto Skeleton::ValidLastLiteral(u64 curr_segment_idx, u64 tail_end, u64 text_length) const -> bool {
+  if (curr_segment_idx + 1 < seg_.size()) { return true; }  // more segments remain
+  if (seg_.back().has_suffix_percent) { return true; }      // trailing % absorbs any further bytes
+  return tail_end == text_length;
 }
 
 // --------------------------------------------------------------------------------------------
 // Matcher
 auto Matcher::TryMatchingLiteral(const Skeleton &sket, const MatchingOutputType &ac_match, u64 curr_cp_index,
-                                 DelayedMatchQueue &delay_queue) -> bool {
+                                 DelayedMatchQueue &delay_queue, const char *text, u64 text_len) -> bool {
   const auto &segment = sket[segment_idx_];
   const auto pat_pos  = ac_match.pattern_index.start_pos;
 
@@ -132,9 +187,21 @@ auto Matcher::TryMatchingLiteral(const Skeleton &sket, const MatchingOutputType 
   // - First literal -- anchored at text start (no prefix %), or freely placed (with prefix %)
   // - Non-first literal -- previous literal must exist at the exact expected gap (diff)
   if (segment.IsFirstLiteral(pat_pos)) {
-    // With prefix %: can start anywhere. Without: must align exactly with text start.
-    const bool anchored_at_text_start = segment_idx_ == 0 && ac_match.text_start_pos == pat_pos;
-    if (!segment.has_prefix_percent && !anchored_at_text_start) { return false; }
+    // The segment may begin no earlier than min_text_start_pos_, and its
+    // leading underscores eat that many code points before the first literal
+    // is allowed to start. head_end is the earliest byte offset the literal
+    // can sit at. Both branches used to compare against a pattern byte offset
+    // instead, which is the same number only on ASCII text.
+    const auto head_end = Utf8Advance(text, text_len, min_text_start_pos_, segment.prefix_underscore_cnt);
+    if (!head_end.has_value()) { return false; }
+    if (segment.has_prefix_percent) {
+      // With prefix %: anywhere at or after head_end.
+      if (ac_match.text_start_pos < *head_end) { return false; }
+    } else if (segment_idx_ != 0 || ac_match.text_start_pos != *head_end) {
+      // Without: anchored, so exactly there. Only segment 0 can lack a
+      // prefix %, the rest have one by construction.
+      return false;
+    }
   } else {
     const auto diff = ac_match.text_start_pos - pat_pos;
     if (!Contain(diff)) { return false; }

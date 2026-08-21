@@ -223,6 +223,29 @@ jobs:
       - run: cmake --build --preset release --target FuzzDifferential --parallel 4
       - run: ./build/release/test/FuzzDifferential --seconds 60
 
+  # Two ratios the probe has to hold, as an exit status.
+  #
+  # This is a performance job on a shared runner, which is normally a bad idea.
+  # It is a reasonable one here because nothing is an absolute time and nothing
+  # is wall clock. Both ratios divide one probe by another measured in the same
+  # process moments earlier, and both are process CPU time, so a runner that is
+  # uniformly slower than the last one gives the same answer and a runner that
+  # deschedules us does not get counted. The thresholds are also well away from
+  # the readings.
+  #
+  # If it starts flaking, read the threshold note in perf_guard.cc first. More
+  # repeats was tried on a heavily loaded box and did not help, so raising
+  # REPEATS is not the answer either. Moving a threshold to make CI quiet
+  # deletes the only thing here that says what the probe is supposed to be.
+  perf-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - run: cmake --preset release-bench
+      - run: cmake --build --preset release-bench --target perf_guard --parallel 4
+      - run: ./build/release-bench/benchmark/perf_guard
+
   # The benchmark binaries sit behind ENABLE_BENCHMARK, so nothing else in CI
   # compiles them and they would rot without this. Build only and nothing is
   # run: a timing number off a shared runner is not worth asserting on, and the

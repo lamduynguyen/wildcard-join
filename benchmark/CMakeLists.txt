@@ -23,3 +23,10 @@ target_link_libraries(ac_bench PUBLIC ahocorasick fmt::fmt csv_parser)
 # same spelling so the two cannot drift apart.
 target_include_directories(ac_bench PRIVATE ${CMAKE_SOURCE_DIR})
 ac_link_duckdb(ac_bench)
+
+# No DuckDB. It measures the probe against itself at two pattern counts and two
+# row shapes, so nothing here needs a second implementation, and a guard that
+# CI cannot run without an optional runtime is a guard that does not run.
+add_executable(perf_guard perf_guard.cc)
+target_link_libraries(perf_guard PUBLIC ahocorasick fmt::fmt)
+target_include_directories(perf_guard PRIVATE ${CMAKE_SOURCE_DIR})

@@ -17,4 +17,5 @@ if(ENABLE_TESTING)
 
   ac_add_test(TestAhoCorasick test_ahocorasick.cc)
   ac_add_test(TestMatching test_matching.cc)
+  ac_add_test(TestReuse test_reuse.cc)
 endif()

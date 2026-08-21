@@ -57,25 +57,30 @@ class PatternAnalyzer {
 struct TextParserIterator {
   // ---- Construction --------------------------------------------------------
 
+  /**
+   * @brief Allocate the per-pattern matcher state without pointing at a text.
+   *
+   * Use this when probing many texts against the same pattern set, together
+   * with ResetText(). Building the matchers costs one LRU cache per pattern,
+   * so doing it per text makes the probe O(patterns) per row even for rows
+   * that match nothing.
+   */
+  TextParserIterator(const PatternAnalyzer *build_side, const AhoCorasick *trie);
+
   TextParserIterator(const char *text, size_t text_len, const PatternAnalyzer *build_side, const AhoCorasick *trie)
-      : text(text),
-        text_len(text_len),
-        automaton(trie),
-        build_side(build_side),
-        text_offset(0),
-        codepoint_idx(0),
-        ptr(trie->GetRoot()),
-        queue() {
-    instances.reserve(build_side->Size());
-    for (auto idx = 0U; idx < build_side->Size(); idx++) {
-      const auto &sket = build_side->GetSkeleton(idx);
-      if (sket.IsEmpty() || sket.OnlyWildcard()) {
-        instances.emplace_back(0);
-      } else {
-        instances.push_back(sket.InitializeMatcher());
-      }
-    }
+      : TextParserIterator(build_side, trie) {
+    this->text     = text;
+    this->text_len = text_len;
   }
+
+  /**
+   * @brief Point the iterator at another text and undo the state the previous
+   * text left behind.
+   *
+   * Only the matchers that the previous text actually touched are reset, so
+   * this costs O(patterns that saw a literal hit) rather than O(patterns).
+   */
+  void ResetText(const char *next_text, size_t next_text_len);
 
   inline auto CanAdvanceOneCodePoint() const -> bool { return text_offset < text_len; }
 
@@ -101,7 +106,7 @@ struct TextParserIterator {
   // ---- State ---------------------------------------------------------------
 
   const char *text;                   // text being matched
-  const size_t text_len;              // byte length of text
+  size_t text_len;                    // byte length of text
   const AhoCorasick *automaton;       // AhoCorasick automaton (read-only)
   const PatternAnalyzer *build_side;  // compiled pattern skeletons (read-only)
   size_t text_offset;                 // current byte offset within text
@@ -112,12 +117,39 @@ struct TextParserIterator {
 
  private:
   /**
-   * @brief Advance the automaton by one code point and return all AC matches ending here.
-   * Updates text_offset and codepoint_idx.
+   * @brief Record that instances[pattern_id] is no longer in its initial state.
+   *
+   * A flag array plus a list, rather than a generation counter, because
+   * ResetText has to visit every dirty matcher anyway to empty its LRU cache.
+   * Once you are walking the list, clearing the flag on the way is free and a
+   * counter buys nothing.
    */
-  auto ContinueParseText() -> OutputEmitType;
+  inline void MarkDirty(u32 pattern_id) {
+    if (dirty_[pattern_id] == 0) {
+      dirty_[pattern_id] = 1;
+      dirty_list_.push_back(pattern_id);
+    }
+  }
+
+  // uint8_t and not vector<bool>, because this is read once per AC hit in the
+  // inner loop and a byte load beats a shift and mask. At 10k patterns the
+  // array is 10 KB, so it still sits in L1.
+  std::vector<uint8_t> dirty_;
+  std::vector<u32> dirty_list_;
+
+  /**
+   * @brief Advance the automaton by one code point and overwrite `out` with
+   * every AC match ending here. Updates text_offset and codepoint_idx.
+   *
+   * Fills a caller-owned buffer rather than returning one, so the hot path can
+   * hand it the same buffer on every code point and keep the capacity.
+   */
+  void ContinueParseText(OutputEmitType &out);
 
   void AppendResult(ART::N256 *leaf, size_t cp_len, OutputEmitType &out_result) const;
+
+  // Reused by IterateOneCodePoint, once per code point per row.
+  OutputEmitType emit_buffer_;
 };
 
 }  // namespace aho_corasick

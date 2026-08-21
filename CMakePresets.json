@@ -43,6 +43,16 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "SANITIZER": "ON"
       }
+    },
+    {
+      "name": "release-tsan",
+      "inherits": "base",
+      "displayName": "RelWithDebInfo plus thread sanitizer",
+      "description": "Cannot be combined with release-asan, tsan and asan do not coexist in one binary.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "TSAN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -57,6 +67,10 @@
     {
       "name": "release-asan",
       "configurePreset": "release-asan"
+    },
+    {
+      "name": "release-tsan",
+      "configurePreset": "release-tsan"
     }
   ],
   "testPresets": [
@@ -81,6 +95,11 @@
       "name": "release-asan",
       "inherits": "base",
       "configurePreset": "release-asan"
+    },
+    {
+      "name": "release-tsan",
+      "inherits": "base",
+      "configurePreset": "release-tsan"
     }
   ]
 }

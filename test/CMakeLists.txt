@@ -18,6 +18,7 @@ if(ENABLE_TESTING)
   ac_add_test(TestAhoCorasick test_ahocorasick.cc)
   ac_add_test(TestMatching test_matching.cc)
   ac_add_test(TestReuse test_reuse.cc)
+  ac_add_test(TestConcurrentART test_concurrent_art.cc)
   # Not an ac_add_test: this one has no gtest in it, so gtest_discover_tests
   # would run it once with --gtest_list_tests, get nothing, and register
   # nothing. It is a plain binary with a wall clock budget.

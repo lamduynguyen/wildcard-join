@@ -33,12 +33,11 @@ class N256 {
   friend class Tree;
 
   N256(bool isCodePointEnd) : isCodePointEnd(isCodePointEnd) {
-    // fill_n and not memset. NULL_TERMINATOR is a key byte, and using it as a
-    // fill byte only produced null pointers because it happens to be zero, so
-    // the line read as if the array were being filled with terminators. It also
-    // needed a cast through void * to get past the pointer to pointer
-    // conversion. This says what it means and emits the same stores.
-    std::fill_n(children, std::size(children), nullptr);
+    // A loop and not fill_n. children is an array of std::atomic now, and a
+    // bulk fill over one is not something the standard says anything useful
+    // about. Relaxed, since the node is not reachable by anyone else until
+    // whoever is building it publishes the pointer to it.
+    for (auto &child : children) { child.store(nullptr, std::memory_order_relaxed); }
     if (isCodePointEnd) { links[0] = links[1] = nullptr; }
   }
 
@@ -49,7 +48,21 @@ class N256 {
   uint16_t count = 0;                       // up to 256 children, so uint8_t wraps to 0 on a full node
 
   bool isCodePointEnd = false;
-  N256 *children[256];
+
+  // Atomic, and this is the whole point of the type rather than decoration.
+  // Optimistic lock coupling reads a child pointer without holding anything
+  // and validates afterwards by re-reading the version, so a reader's load of
+  // children[k] genuinely does overlap a writer's store to the same slot under
+  // the write lock. As plain N256* that is a data race, which is undefined
+  // behaviour whatever x86 happens to do with it, and thread sanitizer reports
+  // it on every concurrent insert.
+  //
+  // The version protocol is what makes the value correct: a writer takes the
+  // lock before storing, so a reader that saw a torn or stale slot also sees a
+  // changed version and restarts. The atomics are here to make the access
+  // defined, not to add ordering the protocol does not already have, which is
+  // why the loads are relaxed and cost nothing.
+  std::atomic<N256 *> children[256];
   N256 *links[];
 
  public:
@@ -97,13 +110,17 @@ class N256 {
     }
     upgradeToWriteLockOrRestart(v, needRestart);
     if (needRestart) return;
-    children[key] = generateVal();
+    // Release, so that everything generateVal wrote into the subtree it just
+    // built is visible to anyone who picks this pointer up. writeUnlock below
+    // is a read-modify-write and orders it too, but only against readers that
+    // go through the version, and Tree::insert reads the child first.
+    children[key].store(generateVal(), std::memory_order_release);
     count++;
     writeUnlock();
   }
 
   // Aho-Corasick: suffix and output links
-  auto isTerminalNode() -> bool { return children[NULL_TERMINATOR] != nullptr; }
+  auto isTerminalNode() -> bool { return children[NULL_TERMINATOR].load(std::memory_order_relaxed) != nullptr; }
 
   void setSuffixLink(N256 *n) { links[0] = n; }
 
@@ -126,16 +143,25 @@ class N256 {
 
   // Child access
   bool change(uint8_t key, N256 *val) {
-    children[key] = val;
+    children[key].store(val, std::memory_order_release);
     return true;
   }
 
+  // Relaxed, unlike insertAndUnlock. This one is only called from the
+  // generateVal lambda in Tree::insert, on nodes that are still private to the
+  // thread building them; the release that publishes the whole chain is the
+  // single store in insertAndUnlock.
   void insert(uint8_t key, N256 *val) {
-    children[key] = val;
+    children[key].store(val, std::memory_order_relaxed);
     count++;
   }
 
-  N256 *getChild(const uint8_t k) const { return children[k]; }
+  // Relaxed on purpose. This is the hot path: the probe calls it once per byte
+  // of every row, and the probe is single threaded. An acquire here would put
+  // an ldar in that loop on arm64 to pay for an ordering only the concurrent
+  // insert path needs, so that path takes an explicit acquire fence instead.
+  // See Tree::insert.
+  N256 *getChild(const uint8_t k) const { return children[k].load(std::memory_order_relaxed); }
 
   uint64_t getChildren(uint8_t start, uint8_t end, std::tuple<uint8_t, N256 *> *children,
                        uint32_t &childrenCount) const {
@@ -145,7 +171,8 @@ class N256 {
     if (needRestart) goto restart;
     childrenCount = 0;
     for (unsigned i = start; i <= end; i++) {
-      if (this->children[i] != nullptr) children[childrenCount++] = std::make_tuple(i, this->children[i]);
+      auto *child = this->children[i].load(std::memory_order_relaxed);
+      if (child != nullptr) children[childrenCount++] = std::make_tuple(i, child);
     }
     readUnlockOrRestart(v, needRestart);
     if (needRestart) goto restart;
@@ -155,9 +182,10 @@ class N256 {
   static void deleteChildren(N256 *node) {
     if (N256::isLeaf(node)) { return; }
     for (uint64_t i = 0; i < 256; ++i) {
-      if (node->children[i] != nullptr) {
-        N256::deleteChildren(node->children[i]);
-        N256::deleteNode(node->children[i]);
+      auto *child = node->children[i].load(std::memory_order_relaxed);
+      if (child != nullptr) {
+        N256::deleteChildren(child);
+        N256::deleteNode(child);
       }
     }
   }

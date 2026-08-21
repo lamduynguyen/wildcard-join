@@ -85,6 +85,17 @@ if(SANITIZER)
   target_link_options(prototype_flags INTERFACE -fsanitize=address)
 endif()
 
+# Its own option and not folded into SANITIZER, because tsan cannot be
+# combined with asan at all, and because the only thing it has to say
+# anything about is the optimistic lock coupling in art/, which nothing in
+# the single threaded paths would exercise.
+option(TSAN "Compile with thread sanitizer" OFF)
+if(TSAN)
+  message(STATUS "Enable thread sanitizer")
+  target_compile_options(prototype_flags INTERFACE -fsanitize=thread -fno-omit-frame-pointer)
+  target_link_options(prototype_flags INTERFACE -fsanitize=thread)
+endif()
+
 set(TEST_FILES
     test/test_ahocorasick.cc
     test/test_matching.cc

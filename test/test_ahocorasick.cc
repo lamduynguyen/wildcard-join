@@ -3,8 +3,10 @@
 #include "fmt/format.h"
 #include "gtest/gtest.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace std::literals;
 
@@ -280,6 +282,40 @@ TEST(TestAhoCorasick, MultiByteUnicode) {
     EXPECT_TRUE(cur->isTerminalNode()) << "Pattern not terminal: " << bytes_debug;
     EXPECT_TRUE(ART::N256::isLeaf(cur->getChild(NULL_TERMINATOR)));
   }
+}
+
+// The counter behind the keys of literal_map_ used to be a static, so it was
+// shared by every automaton in the process. Two tries built in the same
+// program numbered their literals out of one sequence, the second one
+// starting wherever the first one stopped, and neither could say how many
+// literals it held. Nothing read the count, so nothing was visibly wrong, but
+// the keys are the only handle on a literal and a dense range per instance is
+// the only shape that lets them be used as an offset later.
+//
+// The two tries here are built one after the other in the same process, which
+// is the case that was broken. With a static counter the second one's keys
+// start at three.
+TEST(TestAhoCorasick, LiteralIdsAreDensePerInstance) {
+  auto first = AhoCorasick();
+  // "he" twice, for two different patterns, to check that the count is
+  // distinct literals and not calls to Insert.
+  auto idx = 0U;
+  for (auto &keyword : std::vector<std::u8string>{u8"he", u8"she", u8"his", u8"he"}) {
+    first.Insert(reinterpret_cast<char *>(keyword.data()), keyword.size(), {idx++, 0});
+  }
+  EXPECT_EQ(first.NumUniqueLiterals(), 3U);
+
+  auto second = AhoCorasick();
+  idx         = 0U;
+  for (auto &keyword : std::vector<std::u8string>{u8"alpha", u8"beta"}) {
+    second.Insert(reinterpret_cast<char *>(keyword.data()), keyword.size(), {idx++, 0});
+  }
+  EXPECT_EQ(second.NumUniqueLiterals(), 2U);
+
+  std::vector<TupleID> keys;
+  for (const auto &entry : second.literal_map_) { keys.push_back(entry.first); }
+  std::sort(keys.begin(), keys.end());
+  EXPECT_EQ(keys, (std::vector<TupleID>{0, 1}));
 }
 
 }  // namespace aho_corasick

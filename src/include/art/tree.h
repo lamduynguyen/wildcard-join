@@ -1,6 +1,7 @@
 #ifndef ART_OPTIMISTICLOCK_COUPLING_N_H
 #define ART_OPTIMISTICLOCK_COUPLING_N_H
 
+#include <atomic>
 #include <cassert>
 #include <functional>
 #include <ranges>
@@ -89,6 +90,14 @@ class Tree {
 
       nodeKey  = getNextChar(keyword, keywordLen, mustAppendNull, level);
       nextNode = node->getChild(nodeKey);
+      // getChild is a relaxed load, because the probe calls it on every byte
+      // of every row and is single threaded. Here it is not: nextNode may have
+      // been published a moment ago by another thread's insertAndUnlock, and
+      // the next thing this loop does is dereference it. The fence pairs with
+      // the release store there and is what makes the subtree behind the
+      // pointer visible. It is on the insert path only, which runs once per
+      // key per level at build time, so it is not in anything hot.
+      std::atomic_thread_fence(std::memory_order_acquire);
       node->readUnlockOrRestart(v, needRestart);
       if (needRestart) goto restart;
 

@@ -243,3 +243,27 @@ jobs:
       - uses: actions/checkout@v5
       - run: pipx install clang-tidy==18.1.8
       - run: scripts/tidy.sh
+
+  # Its own job and not part of asan-lsan, because tsan and asan cannot be in
+  # one binary. The only thing in the repo it has anything to say about is the
+  # optimistic lock coupling in art/, and until TestConcurrentART existed
+  # nothing ever ran two inserts at once, so this job and that test arrive
+  # together.
+  #
+  # halt_on_error, so a race fails the job rather than printing a warning into
+  # a log nobody reads and exiting 0.
+  tsan:
+    runs-on: ubuntu-latest
+    env:
+      TSAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v5
+      # Ubuntu 24.04 ships vm.mmap_rnd_bits=32, and tsan's shadow mapping
+      # cannot live with that many bits of ASLR. Without this the very first
+      # binary tsan builds dies with "unexpected memory mapping" before it
+      # runs a single test, which looks like a compiler bug and is not one.
+      # 28 is what earlier Ubuntu used and what tsan was built against.
+      - run: sudo sysctl -w vm.mmap_rnd_bits=28
+      - run: cmake --preset release-tsan
+      - run: cmake --build --preset release-tsan --parallel 4
+      - run: ctest --preset release-tsan

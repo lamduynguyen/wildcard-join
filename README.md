@@ -1,7 +1,6 @@
 # Reproducibility package: wildcard joins and filters
 
-Artifact for the paper "Teach Your Database to LIKE Strings via Efficient
-Wildcard Joins and Filters", under submission for VLDB 2027.
+Artifact for the paper "Teach Your Database to LIKE Strings via Efficient Wildcard Joins and Filters", under submission for VLDB 2027.
 
 This repository is what the Artifact Availability block points at, so it is the
 first thing a reviewer touches. Read the state section below before spending
@@ -54,11 +53,11 @@ them.
 It runs anywhere current and it can be obtained from upstream instead of taken
 on trust from here.
 
-`umbraOurs` and `umbraNaive` are Umbra. Umbra is closed source. They cannot be
-rebuilt by anyone outside the group that produced them, there is no source in
-this repository that corresponds to them, and there is no way for a reader to
-verify that the binary named `umbraOurs` contains the algorithm the paper
-describes. That is a limitation of this artifact and it should be read as one.
+`umbraNaive` and `umbraOurs` are Umbra -- the system we use to demonstrate the paper's optimizations.
+The former, `umbraNaive`, is a naive implementation without any optimizations.
+The latter, `umbraOurs`, contains all the optimizations described in the paper.
+Because Umbra is closed source, we can't publish the main source code for it.
+Instead, we (1) provide the binaries and (2) publish the prototype implementation of the paper's techniques here in `src/` folder.
 
 They also do not currently run on Ubuntu 24.04. Both link against libraries at
 versions the archive does not carry, including `libLLVM.so.21.1`,
@@ -84,35 +83,6 @@ https://huggingface.co/datasets/lamduynguyen/hackernews at a pinned revision,
 checks each against a SHA256 and counts the rows. About 1.5 GB, 1m22s on
 server3. `reproducibility/README.md` has the load instructions and what the
 queries do.
-
-## State of this artifact
-
-Being direct about it, because a reviewer finding these out one at a time is
-worse than reading them here.
-
-Works today:
-
-* The prototype configures and builds from the repository root, with pinned
-  dependencies, on a machine that has none of them installed.
-* The test suite builds and passes.
-* `bin/duckdb` runs and is a verifiable upstream release.
-* `bin/SHA256SUMS` lets you check all three binaries.
-* The dataset fetches at a pinned revision with checksums, loads into DuckDB,
-  and all five benchmark queries run against it.
-
-Does not work today:
-
-* `bin/umbraOurs` and `bin/umbraNaive` do not run on Ubuntu 24.04, so two of
-  the three systems in the evaluation cannot be executed at all.
-* There is no `run_all.sh`, so there is no single command that goes from a
-  clean clone to the numbers in the paper, and no statement of how long a full
-  run takes.
-* DuckDB does not get the same warm up protocol Umbra does, so the two are not
-  yet compared on equal terms.
-* There is no CI, so none of the above is caught automatically.
-
-Each of these is tracked on the issues in this repository. Work lands here
-first and goes upstream by hand once it is reviewed.
 
 ## Licence and citation
 

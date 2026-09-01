@@ -9,15 +9,20 @@ add_library(croaring STATIC roaring.cc)
 target_include_directories(croaring SYSTEM PUBLIC
                            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 
-# prototype_flags carries NATIVE_ARCH. This used to be a hardcoded
-# -march=native -mtune=native, which meant that the one option in the root
-# CMakeLists that exists to keep a build portable and comparable across
+# prototype_abi carries NATIVE_ARCH and the sanitizers. This used to be a
+# hardcoded -march=native -mtune=native, which meant that the one option in the
+# root CMakeLists that exists to keep a build portable and comparable across
 # machines was quietly overridden by a dependency. Two hosts with different
 # CPUs produced two different croarings whatever you passed. It is also the
 # reason a binary built on the dev box could die with SIGILL on an older
 # server. PRIVATE because these are how croaring is compiled, not a
 # requirement it places on anything that links it.
-target_link_libraries(croaring PRIVATE prototype_flags)
+#
+# prototype_abi and not prototype_flags: the second one carries -Wall -Wextra
+# and, in CI, -Werror. roaring.cc is a generated amalgamation we do not edit,
+# so a warning in it is not a defect we can act on, and failing the build on
+# one only means the next compiler release breaks a green tree.
+target_link_libraries(croaring PRIVATE prototype_abi)
 
 # CMAKE_POSITION_INDEPENDENT_CODE is already ON project wide, so the -fPIC
 # that used to be appended here by hand is redundant. It was also appended to

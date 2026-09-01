@@ -162,6 +162,9 @@ struct Counters {
   fmt::print(stderr, "  text:     '{}'\n", text);
   fmt::print(stderr, "  hex:      {}\n", Hex(text));
   fmt::print(stderr, "  aho-corasick says {}, recursive reference says {}\n", ac, ref);
+  // The fuzzer is single threaded, and this is the path where it has already
+  // found a disagreement and is giving up.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
   std::exit(1);
 }
 
@@ -177,7 +180,15 @@ auto main(int argc, char **argv) -> int {
 
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "--seconds") == 0 && i + 1 < argc) {
-      seconds = std::atof(argv[++i]);
+      // strtod and not atof, which reports no error at all: a typo in the
+      // budget would silently become zero seconds and the job would pass in
+      // no time looking like it had run.
+      char *end = nullptr;
+      seconds   = std::strtod(argv[++i], &end);
+      if (end == argv[i] || *end != '\0' || seconds <= 0) {
+        fmt::print(stderr, "--seconds wants a positive number, got '{}'\n", argv[i]);
+        return 2;
+      }
     } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
       seed       = std::strtoull(argv[++i], nullptr, 0);
       seed_given = true;
@@ -230,7 +241,7 @@ auto main(int argc, char **argv) -> int {
         const auto &text = texts[pass == 2 ? texts.size() - 1 - ti : ti];
         Drive(b, text, result);
         for (size_t pi = 0; pi < patterns.size(); pi++) {
-          bool ref = NljRecursiveMatch(text.data(), text.size(), patterns[pi].data(), patterns[pi].size());
+          const bool ref = NljRecursiveMatch(text.data(), text.size(), patterns[pi].data(), patterns[pi].size());
           c.decisions++;
           if (result[pi] != ref) { Fail(round_seed, c, a, patterns[pi], text, static_cast<bool>(result[pi]), ref); }
           if (ref) { c.agreed_yes++; }

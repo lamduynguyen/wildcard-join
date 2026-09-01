@@ -37,6 +37,58 @@ otherwise it says so and skips. `wc -l` is not usable here, `hackernews.csv`
 has newlines inside quoted comment text. The checksums pin the contents
 regardless, the row counts are there so a human can see the shape is right.
 
+### If you reach for the datasets library instead
+
+`fetch_dataset.sh` talks to the hub over plain HTTP and is unaffected by any of
+this. The `datasets` library is not, and the obvious call fails:
+
+```
+>>> load_dataset("lamduynguyen/hackernews")
+DatasetGenerationCastError: An error occurred while generating the dataset
+All the data files must have the same columns, but at some point there are 13
+new columns ({'by', 'id', 'title', ...}) and 3 missing columns ({'block_id',
+'host_pattern', 'category'}).
+```
+
+The three CSVs sit at the top level of the hub repository with three different
+schemas, and the dataset card there carries no configuration. So the csv
+builder globs all three into one `train` split, generates the first, and fails
+casting the second to the first one's schema. The dataset viewer on the hub
+fails the same way and for the same reason, which is what someone opening the
+dataset page sees before they get anywhere near this repository.
+
+Two ways out, and they are not alternatives, the first is the actual fix:
+
+`hf/README.md` here is a dataset card that declares one configuration per file.
+Uploading it to the hub repository fixes the viewer and makes `load_dataset`
+work for everybody, at which point `load_dataset("lamduynguyen/hackernews",
+"blocklists")` does what you would expect. It has to be applied on the hub, so
+it cannot be fixed from this repository alone, and it is checked in here so
+that whoever has write access can apply it verbatim rather than reinvent it.
+
+Until that lands, name the file explicitly and the glob never happens:
+
+```python
+load_dataset("lamduynguyen/hackernews",
+             revision="87f6bf9adb6e6fb41e7591a0d83787487e7e7fb3",
+             data_files={"train": "blocklists.csv"},
+             split="train")
+```
+
+`hf_load.py` is that call for all three files, with the columns and row counts
+checked against what they are supposed to be. It needs `pip install datasets`,
+streams `hackernews.csv` by default so it finishes in seconds, and takes
+`--full` to materialise every row.
+
+```
+hackernews.csv: ok, 13 columns, rows not counted (streamed)
+blocklists.csv: ok, 1000 rows, 3 columns
+topics.csv: ok, 1000 rows, 2 columns
+```
+
+Both paths keep working after the card is uploaded, so nothing here has to be
+undone.
+
 ## Load
 
 `load.sql` uses bare filenames, so it has to run from inside `dataset/`:

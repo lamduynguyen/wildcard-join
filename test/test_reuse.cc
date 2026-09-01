@@ -70,10 +70,10 @@ void CheckReuse(const std::vector<std::string> &patterns, const std::vector<std:
 // Multi-segment patterns are the ones that leave a matcher parked on a later
 // segment when the text runs out, so they are the ones a missed reset breaks.
 TEST(TestReuse, MultiSegmentPatternsAcrossRows) {
-  std::vector<std::string> patterns = {
+  const std::vector<std::string> patterns = {
     "%alpha%beta%", "%beta%alpha%", "%alpha%", "%beta%", "alpha%", "%beta", "%al_ha%", "%a%b%c%",
   };
-  std::vector<std::string> texts = {
+  const std::vector<std::string> texts = {
     "alpha and then beta",   // matches the first, and parks nothing
     "beta only here",        // the previous row left segment 1 of "%alpha%beta%" armed
     "alpha only here",       // parks "%alpha%beta%" on its second segment, no beta follows
@@ -89,10 +89,10 @@ TEST(TestReuse, MultiSegmentPatternsAcrossRows) {
 // Those entries name a pattern and a code point index, and both are stale for
 // the next row.
 TEST(TestReuse, DelayedQueueLeftoversDoNotLeak) {
-  std::vector<std::string> patterns = {
+  const std::vector<std::string> patterns = {
     "%ab_cd%", "%ab__cd%", "%ab___cd%", "%ab_cd", "ab_cd%",
   };
-  std::vector<std::string> texts = {
+  const std::vector<std::string> texts = {
     "xxab",     // schedules the cd lookahead, then the text ends
     "cdxxxx",   // the stale schedule from above would fire here
     "abxcd",    //
@@ -107,13 +107,13 @@ TEST(TestReuse, DelayedQueueLeftoversDoNotLeak) {
 // Same thing on multi-byte code points, where the byte offset and the code
 // point index diverge and the delayed queue actually earns its keep.
 TEST(TestReuse, UnicodeAcrossRows) {
-  std::vector<std::string> patterns = {
+  const std::vector<std::string> patterns = {
     "%\xf0\x9f\x98\x80_\xf0\x9f\x8d\x95%",  // grinning face, one code point, pizza
     "%\xf0\x9f\x98\x80%",                   // grinning face
     "%\xf0\x9f\x8d\x95%",                   // pizza
     "%\xc3\xa4_\xc3\xb6%",                  // a umlaut, one code point, o umlaut
   };
-  std::vector<std::string> texts = {
+  const std::vector<std::string> texts = {
     "\xf0\x9f\x98\x80",                                  // just the grinning face, arms the lookahead
     "\xf0\x9f\x8d\x95",                                  // just the pizza
     "\xf0\x9f\x98\x80\xf0\x9f\x90\x8d\xf0\x9f\x8d\x95",  // face, snake, pizza
@@ -128,10 +128,10 @@ TEST(TestReuse, UnicodeAcrossRows) {
 // The wildcard-only patterns get a zero capacity Matcher that is never dirty.
 // Mixing them in makes sure the reset loop is not indexing by the wrong id.
 TEST(TestReuse, WildcardOnlyPatternsMixedIn) {
-  std::vector<std::string> patterns = {
+  const std::vector<std::string> patterns = {
     "%", "%needle%", "%%", "_", "%needle", "__", "needle%",
   };
-  std::vector<std::string> texts = {
+  const std::vector<std::string> texts = {
     "needle", "a", "ab", "haystack with a needle in it", "", "needle at the front", "at the back needle",
   };
   CheckReuse(patterns, texts);
@@ -160,6 +160,10 @@ TEST(TestReuse, RandomizedRowOrderIndependence) {
   static constexpr uint64_t EXPECTED_PATTERN_DIGEST = 0xfeabca6d88da3d99ULL;
   static constexpr uint64_t EXPECTED_TEXT_DIGEST    = 0xbbc87eedc6c72bdeULL;
 
+  // A predictable sequence is the whole point. The two digests above are
+  // checked in against this seed, so a random one would mean the corpus
+  // changed every run and the digests could not exist.
+  // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp)
   std::mt19937 rng(0x5EED);
 
   std::vector<std::string> patterns;

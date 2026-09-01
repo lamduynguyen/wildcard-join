@@ -50,7 +50,11 @@ namespace {
 
 using aho_corasick::TextParserIterator;
 
-const std::string GOLDEN_PATH = std::string(AC_REPRO_DIR) + "/expected/baseline_workloads.tsv";
+// A pointer into the string literal and not a std::string, because a namespace
+// scope std::string runs a constructor that can throw before main, where
+// nothing can catch it. AC_REPRO_DIR is a string literal, so the concatenation
+// here happens at compile time and there is nothing left to run.
+constexpr const char *GOLDEN_PATH = AC_REPRO_DIR "/expected/baseline_workloads.tsv";
 
 struct Golden {
   std::string name;
@@ -79,7 +83,7 @@ void FoldU64(uint64_t &h, uint64_t v) {
 // happen to this file is a human reading it in a pull request diff.
 auto LoadGolden() -> std::vector<Golden> {
   std::ifstream in(GOLDEN_PATH);
-  if (!in) { throw std::runtime_error("cannot open " + GOLDEN_PATH); }
+  if (!in) { throw std::runtime_error(std::string("cannot open ") + GOLDEN_PATH); }
 
   std::vector<Golden> out;
   std::string line;
@@ -167,6 +171,9 @@ INSTANTIATE_TEST_SUITE_P(Baseline, GoldenWorkload, testing::ValuesIn(workload::B
 // variable rather than behind a command line flag somebody might set by
 // accident while running the suite.
 TEST(GoldenRegenerate, WriteExpectedFile) {
+  // gtest runs this body on one thread, and nothing here has started another
+  // one yet.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
   const char *env = std::getenv("AC_GOLDEN_REGENERATE");
   if (env == nullptr || std::string(env) != "1") {
     GTEST_SKIP() << "set AC_GOLDEN_REGENERATE=1 to rewrite " << GOLDEN_PATH;

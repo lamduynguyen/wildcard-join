@@ -301,7 +301,7 @@ TEST(TestMatching, BasicUnicode) {
   // NLJ-recursive matching
   for (auto &[pat, result] : tests) {
     auto try_pat = NljRecursiveMatch(reinterpret_cast<char *>(text.data()), text.size(),
-                                  reinterpret_cast<char *>(pat.data()), pat.size());
+                                     reinterpret_cast<char *>(pat.data()), pat.size());
     if (try_pat != result) {
       fmt::print("NLJrec: evaluate pattern '{}' return wrong result\n", reinterpret_cast<const char *>(pat.data()));
     }
@@ -510,8 +510,8 @@ TEST(TestMatching, UnderscoreRegressions) {
     EXPECT_EQ(GreedyMatching(text.data(), text.size(), pattern.data(), pattern.size()), c.expected)
       << "greedy reference disagrees with the expectation for '" << pattern << "' on '" << text << "'";
 
-    std::vector<std::string> one = {pattern};
-    auto got                     = AhoCorasickMultiplePatterns(text.data(), text.size(), one, "");
+    const std::vector<std::string> one = {pattern};
+    auto got                           = AhoCorasickMultiplePatterns(text.data(), text.size(), one, "");
     EXPECT_EQ(got[0], c.expected) << "aho-corasick got '" << pattern << "' wrong on '" << text << "'";
   }
 }

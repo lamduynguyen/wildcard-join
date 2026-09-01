@@ -136,7 +136,7 @@ TEST(TestConcurrentART, DisjointKeys) {
   // collide. Striding puts every thread all over the trie at once.
   RunOnThreads(threads, [&](unsigned t) {
     for (size_t i = t; i < words.with_null.size(); i += threads) {
-      PatternIndexType idx(static_cast<u32>(i), 0);
+      const PatternIndexType idx(static_cast<u32>(i), 0);
       ac.Insert(words.with_null[i].data(), words.with_null[i].size(), idx);
     }
   });
@@ -158,7 +158,7 @@ TEST(TestConcurrentART, EveryThreadInsertsEveryKey) {
   // word list.
   RunOnThreads(threads, [&](unsigned t) {
     for (size_t i = 0; i < words.with_null.size(); i++) {
-      PatternIndexType idx(static_cast<u32>(t * words.with_null.size() + i), 0);
+      const PatternIndexType idx(static_cast<u32>(t * words.with_null.size() + i), 0);
       ac.Insert(words.with_null[i].data(), words.with_null[i].size(), idx);
     }
   });
@@ -187,7 +187,7 @@ TEST(TestConcurrentART, DeepSharedPrefix) {
   AhoCorasick ac;
   RunOnThreads(threads, [&](unsigned t) {
     for (size_t i = t; i < words.with_null.size(); i += threads) {
-      PatternIndexType idx(static_cast<u32>(i), 0);
+      const PatternIndexType idx(static_cast<u32>(i), 0);
       ac.Insert(words.with_null[i].data(), words.with_null[i].size(), idx);
     }
   });
@@ -207,7 +207,7 @@ TEST(TestConcurrentART, MatchesASerialBuild) {
 
   AhoCorasick serial;
   for (size_t i = 0; i < words.with_null.size(); i++) {
-    PatternIndexType idx(static_cast<u32>(i), 0);
+    const PatternIndexType idx(static_cast<u32>(i), 0);
     serial.Insert(words.with_null[i].data(), words.with_null[i].size(), idx);
   }
   serial.BuildSuffixLink();
@@ -215,7 +215,7 @@ TEST(TestConcurrentART, MatchesASerialBuild) {
   AhoCorasick concurrent;
   RunOnThreads(threads, [&](unsigned t) {
     for (size_t i = t; i < words.with_null.size(); i += threads) {
-      PatternIndexType idx(static_cast<u32>(i), 0);
+      const PatternIndexType idx(static_cast<u32>(i), 0);
       concurrent.Insert(words.with_null[i].data(), words.with_null[i].size(), idx);
     }
   });

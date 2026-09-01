@@ -41,8 +41,8 @@ inline auto Digest(const std::vector<std::string> &parts) -> uint64_t {
   constexpr uint64_t PRIME  = 0x100000001b3ULL;
 
   uint64_t h = OFFSET;
-  for (std::string_view s : parts) {
-    for (unsigned char c : s) {
+  for (const std::string_view s : parts) {
+    for (const unsigned char c : s) {
       h ^= c;
       h *= PRIME;
     }

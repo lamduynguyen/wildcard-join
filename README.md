@@ -84,6 +84,15 @@ checks each against a SHA256 and counts the rows. About 1.5 GB, 1m22s on
 server3. `reproducibility/README.md` has the load instructions and what the
 queries do.
 
+That is the supported path and it works. The dataset page itself does not: the
+viewer on the hub, and `load_dataset("lamduynguyen/hackernews")`, both fail
+with a `DatasetGenerationCastError`, because the three CSVs have three
+different schemas and the dataset card declares no configurations, so the csv
+builder tries to concatenate them. `reproducibility/hf/README.md` is the card
+that fixes it and has to be uploaded to the hub repository by someone with
+write access there. `reproducibility/hf_load.py` is a `datasets` loader that
+works today without that, and `reproducibility/README.md` explains both.
+
 ## Licence and citation
 
 MIT, see `LICENSE`. Third party components and the licensing of the
